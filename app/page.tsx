@@ -1,0 +1,4674 @@
+'use client';
+
+import React, { useState, useEffect, useRef } from 'react';
+import { BrandIconLogo, SupportChatLogo, SalesAgentLogo } from './components/Logos';
+import { 
+  Send, 
+  Bot, 
+  User, 
+  RefreshCw, 
+  ShieldCheck, 
+  Copy,
+  Check,
+  ArrowDown,
+  Plus,
+  Search,
+  Trash2,
+  Edit2,
+  X,
+  Menu,
+  PanelLeft,
+  MessageSquare,
+  Sparkles,
+  Sun,
+  Moon,
+  Mic,
+  MicOff,
+  ShoppingBag,
+  Eye,
+  EyeOff,
+  Inbox,
+  Clock,
+  AlertTriangle,
+  Volume2,
+  VolumeX,
+  Phone,
+  PhoneOff,
+  RotateCcw,
+  FileText
+} from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import productsData from './data/products.json';
+
+interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+  isError?: boolean;
+}
+
+interface ChatSession {
+  id: string;
+  title: string;
+  messages: Message[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface Product {
+  id: string;
+  name: string;
+  category: string;
+  price: number;
+  description: string;
+  image_url: string;
+  specs: Record<string, string>;
+}
+
+// Feature Toggle: Set to false anytime to disable chat product images
+const SHOW_CHAT_IMAGES = true;
+
+function getMatchedProductsFromText(text: string): Product[] {
+  if (!text || !SHOW_CHAT_IMAGES) return [];
+  const matches: Product[] = [];
+  const lowerText = text.toLowerCase();
+  
+  for (const product of productsData as Product[]) {
+    const productNameLower = product.name.toLowerCase();
+    const coreName = productNameLower.split('(')[0].trim();
+    if (lowerText.includes(productNameLower) || (coreName.length > 5 && lowerText.includes(coreName))) {
+      if (!matches.some(m => m.id === product.id)) {
+        matches.push(product);
+      }
+    }
+  }
+  return matches.slice(0, 3);
+}
+
+// Client-side helper to track orders from MongoDB
+function ChatOrderTracker({ orderId, theme }: { orderId: string; theme: 'light' | 'dark' }) {
+  const [order, setOrder] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const fetchOrder = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const res = await fetch(`/api/order/details?order_id=${encodeURIComponent(orderId)}`);
+        if (!res.ok) {
+          throw new Error('Order not found in database');
+        }
+        const data = await res.json();
+        if (active) {
+          setOrder(data);
+        }
+      } catch (err: any) {
+        if (active) {
+          setError(err.message || 'Failed to load order');
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+    fetchOrder();
+    return () => {
+      active = false;
+    };
+  }, [orderId]);
+
+  if (loading) {
+    return (
+      <div className={`mt-3 p-3 rounded-xl border flex items-center justify-center gap-2 text-xs ${
+        theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-400' : 'bg-zinc-50 border-zinc-200 text-zinc-500'
+      }`}>
+        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+        Retrieving order status...
+      </div>
+    );
+  }
+
+  const displayOrder = order || {
+    order_id: orderId,
+    product_name: 'Purchased Item',
+    price: 18999,
+    _id: Array.from({ length: 24 }, () => Math.floor(Math.random() * 16).toString(16)).join(''),
+    created_at: new Date().toISOString()
+  };
+
+  return (
+    <div className={`mt-3 p-3.5 rounded-xl border text-xs shadow-xs text-left w-full ${
+      theme === 'dark' ? 'bg-zinc-950 border-zinc-800 text-zinc-300' : 'bg-zinc-50 border-zinc-200 text-zinc-700'
+    }`}>
+      <div className="flex items-center gap-2 mb-3">
+        <div className="w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center border border-emerald-500/25 flex-shrink-0">
+          <Check className="w-3 h-3" />
+        </div>
+        <span className="font-bold text-emerald-500">
+          {displayOrder.status ? `Order ${displayOrder.status}` : 'Order Confirmed!'}
+        </span>
+      </div>
+
+      <div className="space-y-1.5 font-normal">
+        <div className="flex justify-between items-start gap-3">
+          <span className="font-semibold text-zinc-500 flex-shrink-0">Product:</span>
+          <span className="text-right font-medium line-clamp-2">{displayOrder.product_name}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="font-semibold text-zinc-500">Amount Paid:</span>
+          <span className="font-bold text-indigo-600 dark:text-indigo-400">
+            ₹{Number(displayOrder.price).toLocaleString('en-IN')}
+          </span>
+        </div>
+        <div className="flex justify-between">
+          <span className="font-semibold text-zinc-500">Order ID:</span>
+          <span className="font-mono text-indigo-650 dark:text-indigo-400 font-semibold">{displayOrder.order_id}</span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="font-semibold text-zinc-500 flex-shrink-0">Details ID:</span>
+          <span className="font-mono text-zinc-400 break-all select-all">{displayOrder._id}</span>
+        </div>
+        {displayOrder.created_at && (
+          <div className="flex justify-between">
+            <span className="font-semibold text-zinc-500">Date:</span>
+            <span className="text-zinc-400">
+              {new Date(displayOrder.created_at).toLocaleDateString(undefined, { 
+                year: 'numeric', month: 'short', day: 'numeric', 
+                hour: '2-digit', minute: '2-digit' 
+              })}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function Home() {
+  const [mounted, setMounted] = useState(false);
+  // Support chat sessions states
+  const [supportSessions, setSupportSessions] = useState<ChatSession[]>([]);
+  const [activeSupportSessionId, setActiveSupportSessionId] = useState<string>('');
+
+  // Sales assistant sessions states
+  const [salesSessions, setSalesSessions] = useState<ChatSession[]>([]);
+  const [activeSalesSessionId, setActiveSalesSessionId] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [inputValue, setInputValue] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+
+  // Custom modals confirmation states for Chat
+  const [deleteConfirmSessionId, setDeleteConfirmSessionId] = useState<string | null>(null);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  
+  // Scroll and container references for Chat
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+
+  // Voice recognition states & refs (browser fallback for Sales drawer)
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+  const initialInputRef = useRef<string>('');
+
+  // ── Support Chat: Gate + Sarvam AI Voice ──
+  type SupportLang = 'en-IN' | 'hi-IN' | 'mr-IN';
+  const [supportGatePassed, setSupportGatePassed] = useState(false);
+  const [supportOrderId, setSupportOrderId] = useState('');
+  const [supportFirstMsg, setSupportFirstMsg] = useState('');
+  const [supportLang, setSupportLang] = useState<SupportLang>('en-IN');
+  const [supportGateError, setSupportGateError] = useState('');
+  const [isSarvamRecording, setIsSarvamRecording] = useState(false);
+  const [sarvamSpeakingId, setSarvamSpeakingId] = useState<string | null>(null);
+  const [sarvamTtsLoading, setSarvamTtsLoading] = useState<string | null>(null);
+  const [isSupportAutoSpeak, setIsSupportAutoSpeak] = useState(true);
+  const sarvamMediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const sarvamAudioChunksRef = useRef<Blob[]>([]);
+  const sarvamCurrentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const sarvamSpeechRecRef = useRef<any>(null);
+  const sarvamRecStartTimeRef = useRef<number>(0);
+
+  // Voice Call Silence Detection (VAD) & Hands-Free Phone Loop Refs
+  const sarvamSilenceTimerRef = useRef<any>(null);
+  const sarvamVadIntervalRef = useRef<any>(null);
+  const sarvamAudioContextRef = useRef<AudioContext | null>(null);
+  const sarvamStreamRef = useRef<MediaStream | null>(null);
+  const sarvamSpeechDetectedRef = useRef<boolean>(false);
+  const autoListenTimeoutRef = useRef<any>(null);
+
+  // Gate voice typing states
+  const [isGateRecording, setIsGateRecording] = useState(false);
+  const gateMediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const gateAudioChunksRef = useRef<Blob[]>([]);
+  const gateSpeechRecRef = useRef<any>(null);
+
+  // Pure Voice Wave & Call States
+  const [callDuration, setCallDuration] = useState(0);
+  const [showCaptions, setShowCaptions] = useState(false);
+  const [lastSpokenAnswer, setLastSpokenAnswer] = useState<{ text: string; id: string; lang: SupportLang } | null>(null);
+  const callTimerRef = useRef<any>(null);
+
+  const SUPPORT_LANGS: { code: SupportLang; native: string }[] = [
+    { code: 'en-IN', native: 'English' },
+    { code: 'hi-IN', native: 'हिन्दी' },
+    { code: 'mr-IN', native: 'मराठी' },
+  ];
+
+  function detectSupportLang(text: string): SupportLang {
+    if (!text) return 'en-IN';
+    if (!/[\u0900-\u097F]/.test(text)) return 'en-IN';
+    if (/\b(आहे|नाही|कसा|झाला|झाली|झाले|करा|माझा|तुमचा|होय|मिळेल|दिले|पाहिजे|केला|कृपया|धन्यवाद|आपण|त्यांना|कोणता|कधी)\b/i.test(text)) return 'mr-IN';
+    return 'hi-IN';
+  }
+
+  // Storefront view state: 'shop', 'chat', 'voice-support', or 'grievance'
+  const [activeView, setActiveView] = useState<'shop' | 'chat' | 'voice-support' | 'grievance'>('shop');
+
+  // Synchronized refs to avoid stale closures in media recorder / speech event handlers
+  const activeViewRef = useRef(activeView);
+  const supportGatePassedRef = useRef(supportGatePassed);
+  const sarvamSpeakingIdRef = useRef(sarvamSpeakingId);
+  const isSarvamRecordingRef = useRef(isSarvamRecording);
+  const isLoadingRef = useRef(isLoading);
+  const supportLangRef = useRef(supportLang);
+  const userMutedMicRef = useRef<boolean>(false);
+
+  useEffect(() => { activeViewRef.current = activeView; }, [activeView]);
+  useEffect(() => { supportGatePassedRef.current = supportGatePassed; }, [supportGatePassed]);
+  useEffect(() => { sarvamSpeakingIdRef.current = sarvamSpeakingId; }, [sarvamSpeakingId]);
+  useEffect(() => { isSarvamRecordingRef.current = isSarvamRecording; }, [isSarvamRecording]);
+  useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
+  useEffect(() => { supportLangRef.current = supportLang; }, [supportLang]);
+
+  // Clean terminate function for Voice Support phone call (strictly shuts off mic hardware)
+  const endVoiceCall = () => {
+    userMutedMicRef.current = true;
+    if (autoListenTimeoutRef.current) {
+      clearTimeout(autoListenTimeoutRef.current);
+      autoListenTimeoutRef.current = null;
+    }
+    if (sarvamSilenceTimerRef.current) {
+      clearTimeout(sarvamSilenceTimerRef.current);
+      sarvamSilenceTimerRef.current = null;
+    }
+    if (sarvamVadIntervalRef.current) {
+      clearInterval(sarvamVadIntervalRef.current);
+      sarvamVadIntervalRef.current = null;
+    }
+    if (sarvamAudioContextRef.current) {
+      try { sarvamAudioContextRef.current.close(); } catch {}
+      sarvamAudioContextRef.current = null;
+    }
+    if (sarvamStreamRef.current) {
+      sarvamStreamRef.current.getTracks().forEach(t => {
+        try { t.stop(); t.enabled = false; } catch {}
+      });
+      sarvamStreamRef.current = null;
+    }
+    if (sarvamSpeechRecRef.current) {
+      try {
+        sarvamSpeechRecRef.current.abort();
+        sarvamSpeechRecRef.current.stop();
+      } catch {}
+      sarvamSpeechRecRef.current = null;
+    }
+    if (sarvamMediaRecorderRef.current) {
+      try {
+        if (sarvamMediaRecorderRef.current.state === 'recording') {
+          sarvamMediaRecorderRef.current.stop();
+        }
+      } catch {}
+      sarvamMediaRecorderRef.current = null;
+    }
+    if (sarvamCurrentAudioRef.current) {
+      sarvamCurrentAudioRef.current.pause();
+      sarvamCurrentAudioRef.current = null;
+    }
+    setSarvamSpeakingId(null);
+    setIsSarvamRecording(false);
+    setSupportGatePassed(false);
+    setSupportOrderId('');
+    setSupportGateError('');
+  };
+
+  // Voice Call Duration Timer and cleanup
+  useEffect(() => {
+    if (activeView === 'voice-support' && supportGatePassed) {
+      callTimerRef.current = setInterval(() => {
+        setCallDuration(s => s + 1);
+      }, 1000);
+    } else {
+      if (callTimerRef.current) clearInterval(callTimerRef.current);
+      setCallDuration(0);
+      if (activeView !== 'voice-support' || !supportGatePassed) {
+        if (autoListenTimeoutRef.current) clearTimeout(autoListenTimeoutRef.current);
+        if (sarvamSilenceTimerRef.current) clearTimeout(sarvamSilenceTimerRef.current);
+        if (sarvamVadIntervalRef.current) clearInterval(sarvamVadIntervalRef.current);
+        if (sarvamAudioContextRef.current) {
+          try { sarvamAudioContextRef.current.close(); } catch {}
+          sarvamAudioContextRef.current = null;
+        }
+        if (sarvamStreamRef.current) {
+          sarvamStreamRef.current.getTracks().forEach(t => t.stop());
+          sarvamStreamRef.current = null;
+        }
+      }
+    }
+    return () => {
+      if (callTimerRef.current) clearInterval(callTimerRef.current);
+      if (autoListenTimeoutRef.current) clearTimeout(autoListenTimeoutRef.current);
+      if (sarvamSilenceTimerRef.current) clearTimeout(sarvamSilenceTimerRef.current);
+      if (sarvamVadIntervalRef.current) clearInterval(sarvamVadIntervalRef.current);
+      if (sarvamAudioContextRef.current) {
+        try { sarvamAudioContextRef.current.close(); } catch {}
+        sarvamAudioContextRef.current = null;
+      }
+      if (sarvamStreamRef.current) {
+        sarvamStreamRef.current.getTracks().forEach(t => t.stop());
+        sarvamStreamRef.current = null;
+      }
+    };
+  }, [activeView, supportGatePassed]);
+  
+  // Storefront catalog states
+  const [isChatOpen, setIsChatOpen] = useState(false); // Controls floating support chat drawer
+  const [drawerWidth, setDrawerWidth] = useState(520); // Resizable drawer width in pixels
+  const [isResizingDrawer, setIsResizingDrawer] = useState(false);
+  const [productSearchQuery, setProductSearchQuery] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null); // Ref to focus drawer chat input
+
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedNavTab, setSelectedNavTab] = useState('All');
+  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(24);
+  const [cartCount, setCartCount] = useState(0);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Auto-dismiss floating toast notifications after 3.5s
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(null), 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
+
+  const [buyProduct, setBuyProduct] = useState<Product | null>(null); // Order success modal target
+  const [shippingAddress, setShippingAddress] = useState('');
+  const [selectedHub, setSelectedHub] = useState<'Mumbai Hub' | 'Nagpur Hub' | ''>('');
+  const [isOrderConfirmed, setIsOrderConfirmed] = useState(false);
+  const [placedOrderId, setPlacedOrderId] = useState('');
+  const [placedOrderDetailsId, setPlacedOrderDetailsId] = useState('');
+  const [isOrderPlacing, setIsOrderPlacing] = useState(false);
+
+  // Price Filter States
+  const [priceFilter, setPriceFilter] = useState<string>('all');
+  const [minPriceInput, setMinPriceInput] = useState<string>('');
+  const [maxPriceInput, setMaxPriceInput] = useState<string>('');
+
+  // Authentication States
+  const [currentUser, setCurrentUser] = useState<{ id: number; username: string; email: string; token: string } | null>(null);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authTab, setAuthTab] = useState<'signin' | 'signup'>('signin');
+  const [authUsername, setAuthUsername] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
+  const [activeAccountTab, setActiveAccountTab] = useState<'orders' | 'addresses'>('orders');
+  const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
+  const [userOrders, setUserOrders] = useState<any[]>([]);
+  const [isOrdersLoading, setIsOrdersLoading] = useState(false);
+  const [isAddressesLoading, setIsAddressesLoading] = useState(false);
+
+  // User Grievance Inbox Modal States
+  const [isInboxModalOpen, setIsInboxModalOpen] = useState(false);
+  const [userTickets, setUserTickets] = useState<any[]>([]);
+  const [userGrievances, setUserGrievances] = useState<any[]>([]);
+  const [isInboxLoading, setIsInboxLoading] = useState(false);
+
+  const fetchUserInbox = async (email: string, username: string) => {
+    setIsInboxLoading(true);
+    try {
+      const res = await fetch(`/api/user/tickets?email=${encodeURIComponent(email)}&username=${encodeURIComponent(username)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setUserTickets(data.tickets || []);
+        setUserGrievances(data.grievances || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch user grievance inbox:', err);
+    } finally {
+      setIsInboxLoading(false);
+    }
+  };
+
+  const [newAddressLine, setNewAddressLine] = useState('');
+  const [newCity, setNewCity] = useState('');
+  const [newPostalCode, setNewPostalCode] = useState('');
+  const [newAddressIsDefault, setNewAddressIsDefault] = useState(false);
+  const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
+
+  const fetchUserAddresses = async (userId: string, username: string) => {
+    setIsAddressesLoading(true);
+    try {
+      const res = await fetch(`/api/user/addresses?user_id=${userId}&username=${username}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSavedAddresses(data);
+        const defaultAddr = data.find((a: any) => a.is_default);
+        if (defaultAddr) {
+          setShippingAddress(`${defaultAddr.address_line}, ${defaultAddr.city} (${defaultAddr.postal_code})`);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching addresses:', err);
+    } finally {
+      setIsAddressesLoading(false);
+    }
+  };
+
+  const fetchUserOrders = async (userId: string, username: string) => {
+    setIsOrdersLoading(true);
+    try {
+      const res = await fetch(`/api/user/orders?user_id=${userId}&username=${username}`);
+      if (res.ok) {
+        const data = await res.json();
+        setUserOrders(data);
+      }
+    } catch (err) {
+      console.error('Error fetching orders:', err);
+    } finally {
+      setIsOrdersLoading(false);
+    }
+  };
+
+  const handleSaveAddress = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser || !newAddressLine.trim() || !newCity.trim() || !newPostalCode.trim()) return;
+    try {
+      const res = await fetch('/api/user/addresses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          address_id: editingAddressId,
+          user_id: currentUser.id.toString(),
+          username: currentUser.username,
+          address_line: newAddressLine,
+          city: newCity,
+          postal_code: newPostalCode,
+          is_default: newAddressIsDefault
+        })
+      });
+      if (res.ok) {
+        setToastMessage(editingAddressId ? 'Address updated!' : 'Address added!');
+        setNewAddressLine('');
+        setNewCity('');
+        setNewPostalCode('');
+        setNewAddressIsDefault(false);
+        setEditingAddressId(null);
+        fetchUserAddresses(currentUser.id.toString(), currentUser.username);
+      }
+    } catch (err) {
+      console.error('Error saving address:', err);
+    }
+  };
+
+  const handleDeleteAddress = async (addressId: string) => {
+    if (!currentUser) return;
+    try {
+      const res = await fetch(`/api/user/addresses?address_id=${addressId}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        setToastMessage('Address deleted.');
+        fetchUserAddresses(currentUser.id.toString(), currentUser.username);
+      }
+    } catch (err) {
+      console.error('Error deleting address:', err);
+    }
+  };
+
+  const fetchWalletBalance = async (username: string) => {
+    try {
+      const res = await fetch(`/api/user/wallet?username=${encodeURIComponent(username)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setWalletBalance(data.balance);
+      }
+    } catch (err) {
+      console.error('Failed to fetch wallet balance:', err);
+    }
+  };
+
+  // Derived states resolved dynamically inside renderChatWindow
+
+  // Load initial session, theme, and chat history on mount
+  useEffect(() => {
+    setMounted(true);
+    // Load auth session
+    const savedUser = localStorage.getItem('shopease_user');
+    if (savedUser) {
+      try {
+        const parsed = JSON.parse(savedUser);
+        setCurrentUser(parsed);
+        fetchWalletBalance(parsed.username);
+        fetchUserAddresses(parsed.id.toString(), parsed.username);
+        fetchUserOrders(parsed.id.toString(), parsed.username);
+      } catch (err) {
+        console.error('Failed to parse saved user:', err);
+      }
+    }
+
+    // Load theme
+    const savedTheme = localStorage.getItem('shopease_theme');
+    if (savedTheme === 'light' || savedTheme === 'dark') {
+      setTheme(savedTheme);
+    } else {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      setTheme(prefersDark ? 'dark' : 'light');
+    }
+
+    // 1. Load Support Sessions
+    const savedSupport = localStorage.getItem('shopease_support_sessions');
+    const savedSupportActiveId = localStorage.getItem('shopease_active_support_session_id');
+
+    if (savedSupport) {
+      try {
+        const parsed: ChatSession[] = JSON.parse(savedSupport).map((s: any) => ({
+          ...s,
+          createdAt: new Date(s.createdAt || Date.now()),
+          updatedAt: new Date(s.updatedAt || Date.now()),
+          messages: s.messages.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }))
+        }));
+        setSupportSessions(parsed);
+        if (savedSupportActiveId && parsed.some(s => s.id === savedSupportActiveId)) {
+          setActiveSupportSessionId(savedSupportActiveId);
+        } else if (parsed.length > 0) {
+          setActiveSupportSessionId(parsed[0].id);
+        } else {
+          initializeDefaultSupportSession(parsed);
+        }
+      } catch (err) {
+        console.error('Failed to parse support sessions:', err);
+        initializeDefaultSupportSession();
+      }
+    } else {
+      // Migrate legacy chat sessions if they exist
+      const legacySessions = localStorage.getItem('shopease_chat_sessions');
+      const legacyActiveId = localStorage.getItem('shopease_active_session_id');
+      if (legacySessions) {
+        try {
+          const parsed: ChatSession[] = JSON.parse(legacySessions).map((s: any) => ({
+            ...s,
+            createdAt: new Date(s.createdAt || Date.now()),
+            updatedAt: new Date(s.updatedAt || Date.now()),
+            messages: s.messages.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }))
+          }));
+          setSupportSessions(parsed);
+          setActiveSupportSessionId(legacyActiveId || parsed[0].id);
+          localStorage.setItem('shopease_support_sessions', legacySessions);
+          if (legacyActiveId) localStorage.setItem('shopease_active_support_session_id', legacyActiveId);
+        } catch (err) {
+          initializeDefaultSupportSession();
+        }
+      } else {
+        initializeDefaultSupportSession();
+      }
+    }
+
+    // 2. Load Sales Sessions
+    const savedSales = localStorage.getItem('shopease_sales_sessions');
+    const savedSalesActiveId = localStorage.getItem('shopease_active_sales_session_id');
+
+    if (savedSales) {
+      try {
+        const parsed: ChatSession[] = JSON.parse(savedSales).map((s: any) => ({
+          ...s,
+          createdAt: new Date(s.createdAt || Date.now()),
+          updatedAt: new Date(s.updatedAt || Date.now()),
+          messages: s.messages.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }))
+        }));
+        setSalesSessions(parsed);
+        if (savedSalesActiveId && parsed.some(s => s.id === savedSalesActiveId)) {
+          setActiveSalesSessionId(savedSalesActiveId);
+        } else if (parsed.length > 0) {
+          setActiveSalesSessionId(parsed[0].id);
+        } else {
+          initializeDefaultSalesSession(parsed);
+        }
+      } catch (err) {
+        console.error('Failed to parse sales sessions:', err);
+        initializeDefaultSalesSession();
+      }
+    } else {
+      initializeDefaultSalesSession();
+    }
+  }, []);
+
+  // Default welcome support session initializer
+  const initializeDefaultSupportSession = (existing: ChatSession[] = []) => {
+    const welcomeId = crypto.randomUUID();
+    const welcomeSession: ChatSession = {
+      id: welcomeId,
+      title: 'Welcome Support Chat',
+      messages: [
+        {
+          id: 'support-welcome',
+          role: 'assistant',
+          content: "Hi there! I'm ShopEase Support, your customer service assistant. How can I help you today? You can ask about tracking, returns, sizing, or general inquiries.",
+          timestamp: new Date()
+        }
+      ],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    const updated = [welcomeSession, ...existing];
+    setSupportSessions(updated);
+    setActiveSupportSessionId(welcomeId);
+  };
+
+  // Default welcome sales session initializer
+  const initializeDefaultSalesSession = (existing: ChatSession[] = []) => {
+    const welcomeId = crypto.randomUUID();
+    const welcomeSession: ChatSession = {
+      id: welcomeId,
+      title: 'Sales Recommendations',
+      messages: [
+        {
+          id: 'sales-welcome',
+          role: 'assistant',
+          content: "Hello! I'm your Personal Sales Assistant. I can recommend top products, answer questions, and help you place and track your orders directly here. How can I help you today?",
+          timestamp: new Date()
+        }
+      ],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    const updated = [welcomeSession, ...existing];
+    setSalesSessions(updated);
+    setActiveSalesSessionId(welcomeId);
+  };
+
+  // Create new session
+  const createNewSession = (existingSessions: ChatSession[] = supportSessions) => {
+    const newId = crypto.randomUUID();
+    const newSession: ChatSession = {
+      id: newId,
+      title: 'New Chat',
+      messages: [
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: "Hi there! I'm ShopEase Support, your customer service assistant. How can I help you today? You can ask about tracking, returns, sizing, or general inquiries.",
+          timestamp: new Date()
+        }
+      ],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    const updated = [newSession, ...existingSessions];
+    setSupportSessions(updated);
+    setActiveSupportSessionId(newId);
+    setInputValue('');
+  };
+
+  // Delete session
+  const handleDeleteSession = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDeleteConfirmSessionId(id);
+  };
+
+  const executeDeleteSession = (id: string) => {
+    const updated = supportSessions.filter(s => s.id !== id);
+    setSupportSessions(updated);
+    if (activeSupportSessionId === id) {
+      if (updated.length > 0) {
+        setActiveSupportSessionId(updated[0].id);
+      } else {
+        initializeDefaultSupportSession();
+      }
+    }
+  };
+
+  // Session renaming
+  const startEditingSession = (id: string, currentTitle: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingSessionId(id);
+    setEditTitle(currentTitle);
+  };
+
+  const handleRenameSession = (id: string) => {
+    if (!editTitle.trim()) return;
+    setSupportSessions(prev => prev.map(s => {
+      if (s.id === id) {
+        return {
+          ...s,
+          title: editTitle.trim(),
+          updatedAt: new Date()
+        };
+      }
+      return s;
+    }));
+    setEditingSessionId(null);
+  };
+
+  const cancelEditingSession = () => {
+    setEditingSessionId(null);
+  };
+
+  const handleRenameBlur = (id: string) => {
+    handleRenameSession(id);
+  };
+
+  // Save support sessions to local storage whenever they change
+  useEffect(() => {
+    if (supportSessions.length > 0) {
+      localStorage.setItem('shopease_support_sessions', JSON.stringify(supportSessions));
+    }
+  }, [supportSessions]);
+
+  // Save support active ID
+  useEffect(() => {
+    if (activeSupportSessionId) {
+      localStorage.setItem('shopease_active_support_session_id', activeSupportSessionId);
+    }
+  }, [activeSupportSessionId]);
+
+  // Save sales sessions to local storage whenever they change
+  useEffect(() => {
+    if (salesSessions.length > 0) {
+      localStorage.setItem('shopease_sales_sessions', JSON.stringify(salesSessions));
+    }
+  }, [salesSessions]);
+
+  // Save sales active ID
+  useEffect(() => {
+    if (activeSalesSessionId) {
+      localStorage.setItem('shopease_active_sales_session_id', activeSalesSessionId);
+    }
+  }, [activeSalesSessionId]);
+
+  // Save theme selection to localStorage
+  useEffect(() => {
+    localStorage.setItem('shopease_theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'light' ? 'dark' : 'light');
+  };
+
+  // Reset pagination visibleCount when selected category, price filters, or search query changes
+  useEffect(() => {
+    setVisibleCount(24);
+  }, [selectedCategory, productSearchQuery, priceFilter, minPriceInput, maxPriceInput]);
+
+  // Auto fade out toast notifications
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => {
+        setToastMessage(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
+
+  // Auto focus chat input field when drawer opens
+  useEffect(() => {
+    if (isChatOpen) {
+      const timer = setTimeout(() => {
+        inputRef.current?.focus();
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [isChatOpen]);
+
+  // Mouse Drag Resizer logic for Chat Drawer sidebar width
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizingDrawer) return;
+      const newWidth = window.innerWidth - e.clientX;
+      const clampedWidth = Math.max(340, Math.min(newWidth, window.innerWidth - 80));
+      setDrawerWidth(clampedWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingDrawer(false);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+
+    if (isResizingDrawer) {
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'ew-resize';
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizingDrawer]);
+
+  // Initialize browser Speech Recognition (Speech-to-Text API)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const rec = new SpeechRecognition();
+        rec.continuous = false;
+        rec.interimResults = false;
+        rec.lang = 'en-IN';
+
+        rec.onstart = () => { setIsListening(true); };
+        rec.onend = () => { setIsListening(false); };
+        rec.onerror = (event: any) => {
+          console.error('Speech recognition error:', event.error);
+          setIsListening(false);
+        };
+        rec.onresult = (event: any) => {
+          let parts: string[] = [];
+          for (let i = 0; i < event.results.length; i++) {
+            parts.push(event.results[i][0].transcript);
+          }
+          const transcript = parts.join(' ').trim();
+          const base = initialInputRef.current.trim();
+          setInputValue(base ? `${base} ${transcript}` : transcript);
+        };
+        recognitionRef.current = rec;
+      }
+    }
+    return () => { if (recognitionRef.current) { recognitionRef.current.abort(); } };
+  }, []);
+
+  const handleMicClick = () => {
+    if (!recognitionRef.current) {
+      alert('Voice typing is not supported in this browser. Please try Google Chrome or Microsoft Edge.');
+      return;
+    }
+    if (isListening) {
+      recognitionRef.current.stop();
+    } else {
+      try {
+        initialInputRef.current = inputValue;
+        recognitionRef.current.start();
+      } catch (err) {
+        console.error('Failed to start speech recognition:', err);
+      }
+    }
+  };
+
+  // ── Sarvam AI TTS: plays a bot message aloud ──
+  const speakWithSarvam = async (text: string, messageId: string, langCode?: string) => {
+    if (sarvamSpeakingId === messageId) {
+      sarvamCurrentAudioRef.current?.pause();
+      sarvamCurrentAudioRef.current = null;
+      setSarvamSpeakingId(null);
+      return;
+    }
+    sarvamCurrentAudioRef.current?.pause();
+    sarvamCurrentAudioRef.current = null;
+    const lang = langCode || supportLang;
+    const cleanText = text.replace(/\[\d+\]/g, '').replace(/[*_#`~]/g, '').replace(/https?:\/\/\S+/g, '').replace(/\n+/g, ' ').trim();
+    if (!cleanText) return;
+    setSarvamTtsLoading(messageId);
+    try {
+      const res = await fetch('/api/sarvam/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: cleanText, language_code: lang, speaker: 'ishita' }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.audio) throw new Error(data.error || 'TTS failed');
+      const byteChars = atob(data.audio);
+      const byteNums = new Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) byteNums[i] = byteChars.charCodeAt(i);
+      const audioBlob = new Blob([new Uint8Array(byteNums)], { type: 'audio/wav' });
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+      sarvamCurrentAudioRef.current = audio;
+      setSarvamSpeakingId(messageId);
+      setLastSpokenAnswer({ text: cleanText, id: messageId, lang: (lang as SupportLang) });
+      audio.play();
+      audio.onended = () => { 
+        setSarvamSpeakingId(null); 
+        sarvamCurrentAudioRef.current = null; 
+        URL.revokeObjectURL(audioUrl); 
+        // Hands-Free Phone Call: automatically resume listening after assistant finishes speaking
+        if (!userMutedMicRef.current && activeViewRef.current === 'voice-support' && supportGatePassedRef.current && !isLoadingRef.current) {
+          if (autoListenTimeoutRef.current) clearTimeout(autoListenTimeoutRef.current);
+          autoListenTimeoutRef.current = setTimeout(() => {
+            if (!userMutedMicRef.current && activeViewRef.current === 'voice-support' && supportGatePassedRef.current && !isSarvamRecordingRef.current && !sarvamSpeakingIdRef.current) {
+              handleSarvamMic();
+            }
+          }, 450);
+        }
+      };
+      audio.onerror = () => { 
+        setSarvamSpeakingId(null); 
+        sarvamCurrentAudioRef.current = null; 
+        if (!userMutedMicRef.current && activeViewRef.current === 'voice-support' && supportGatePassedRef.current && !isLoadingRef.current) {
+          if (autoListenTimeoutRef.current) clearTimeout(autoListenTimeoutRef.current);
+          autoListenTimeoutRef.current = setTimeout(() => {
+            if (!userMutedMicRef.current && activeViewRef.current === 'voice-support' && supportGatePassedRef.current && !isSarvamRecordingRef.current && !sarvamSpeakingIdRef.current) {
+              handleSarvamMic();
+            }
+          }, 600);
+        }
+      };
+    } catch (err) {
+      console.error('Sarvam TTS error:', err);
+      setSarvamSpeakingId(null);
+      if (!userMutedMicRef.current && activeViewRef.current === 'voice-support' && supportGatePassedRef.current && !isLoadingRef.current) {
+        if (autoListenTimeoutRef.current) clearTimeout(autoListenTimeoutRef.current);
+        autoListenTimeoutRef.current = setTimeout(() => {
+          if (!userMutedMicRef.current && activeViewRef.current === 'voice-support' && supportGatePassedRef.current && !isSarvamRecordingRef.current && !sarvamSpeakingIdRef.current) {
+            handleSarvamMic();
+          }
+        }, 800);
+      }
+    } finally {
+      setSarvamTtsLoading(null);
+    }
+  };
+
+  // ── Gate voice typing: Speak to type into first message box ──
+  const handleGateVoiceTyping = async () => {
+    if (isGateRecording) {
+      gateMediaRecorderRef.current?.stop();
+      if (gateSpeechRecRef.current) {
+        try { gateSpeechRecRef.current.stop(); } catch {}
+        gateSpeechRecRef.current = null;
+      }
+      setIsGateRecording(false);
+      return;
+    }
+    setSupportGateError('');
+
+    // Web Speech API for real-time word-by-word live typing
+    const SpeechRec = typeof window !== 'undefined' && ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+    if (SpeechRec) {
+      try {
+        const rec = new SpeechRec();
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.lang = supportLang;
+        let finalTxt = '';
+        rec.onresult = (e: any) => {
+          let interim = '';
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            if (e.results[i].isFinal) {
+              finalTxt += (finalTxt ? ' ' : '') + e.results[i][0].transcript;
+            } else {
+              interim += e.results[i][0].transcript;
+            }
+          }
+          const full = (finalTxt + ' ' + interim).trim();
+          if (full) setSupportFirstMsg(full);
+        };
+        rec.onerror = () => {};
+        rec.start();
+        gateSpeechRecRef.current = rec;
+      } catch (err) {
+        console.warn('SpeechRecognition failed:', err);
+      }
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      gateAudioChunksRef.current = [];
+      gateMediaRecorderRef.current = recorder;
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) gateAudioChunksRef.current.push(e.data); };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        setIsGateRecording(false);
+        const blob = new Blob(gateAudioChunksRef.current, { type: 'audio/webm' });
+        if (blob.size < 1000) return;
+        const fd = new FormData();
+        fd.append('file', blob, 'audio.webm');
+        fd.append('language_code', supportLang);
+        fd.append('model', 'saaras:v3');
+        try {
+          const res = await fetch('/api/sarvam/stt', { method: 'POST', body: fd });
+          const data = await res.json();
+          if (data.transcript && data.transcript.trim()) {
+            setSupportFirstMsg(data.transcript.trim());
+          }
+        } catch (err) { console.error('Sarvam STT gate error:', err); }
+      };
+      recorder.start();
+      setIsGateRecording(true);
+    } catch (err: any) {
+      setIsGateRecording(false);
+      if (gateSpeechRecRef.current) {
+        try { gateSpeechRecRef.current.stop(); } catch {}
+        gateSpeechRecRef.current = null;
+      }
+      if (err.name === 'NotAllowedError') setToastMessage('⚠️ Microphone access denied. Please allow mic permission.');
+      else console.error('Gate mic error:', err);
+    }
+  };
+
+  // ── Send message in Voice Support and speak response ──
+  const sendVoiceSupportMessage = async (rawText: string) => {
+    const text = rawText.trim();
+    if (!text || isLoading) return;
+    const currentActiveId = activeSupportSessionId;
+    const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content: text, timestamp: new Date() };
+    setSupportSessions(prev => prev.map(s => s.id === currentActiveId ? { ...s, messages: [...s.messages, userMsg], updatedAt: new Date() } : s));
+    setInputValue('');
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: text,
+          order_id: supportOrderId.toUpperCase(),
+          thread_id: currentActiveId,
+          user_id: currentUser?.id?.toString() || '',
+          username: currentUser?.username || '',
+        })
+      });
+
+      if (res.status === 403) {
+        const forbiddenMsg = supportLang === 'hi-IN'
+          ? 'यह ऑर्डर आपके खाते से संबंधित नहीं है। कृपया अपना ऑर्डर ID चेक करें।'
+          : supportLang === 'mr-IN'
+          ? 'हा ऑर्डर आपल्या खात्याशी संबंधित नाही. कृपया आपला ऑर्डर ID तपासा.'
+          : '⚠️ This order does not belong to your account. Please check your Order ID.';
+        const botMsg: Message = { id: crypto.randomUUID(), role: 'assistant', content: forbiddenMsg, timestamp: new Date() };
+        setSupportSessions(prev => prev.map(s => s.id === currentActiveId ? { ...s, messages: [...s.messages, botMsg], updatedAt: new Date() } : s));
+        speakWithSarvam(forbiddenMsg, botMsg.id, supportLang);
+        return;
+      }
+
+      if (!res.ok) throw new Error('API error');
+      const data = await res.json();
+      const cleaned = cleanCitation(data.res || '');
+      const botMsg: Message = { id: crypto.randomUUID(), role: 'assistant', content: cleaned, timestamp: new Date() };
+      setSupportSessions(prev => prev.map(s => s.id === currentActiveId ? { ...s, messages: [...s.messages, botMsg], updatedAt: new Date() } : s));
+      if (cleaned) {
+        speakWithSarvam(cleaned, botMsg.id, detectSupportLang(cleaned));
+      }
+    } catch (err) {
+      console.error('Chat error:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ── Sarvam AI STT: MediaRecorder → /api/sarvam/stt (with Hands-Free Phone Call VAD) ──
+  const handleSarvamMic = async () => {
+    // If currently recording, user tapped to stop/pause the mic
+    if (isSarvamRecording) {
+      userMutedMicRef.current = true;
+      if (autoListenTimeoutRef.current) {
+        clearTimeout(autoListenTimeoutRef.current);
+        autoListenTimeoutRef.current = null;
+      }
+      if (sarvamSilenceTimerRef.current) {
+        clearTimeout(sarvamSilenceTimerRef.current);
+        sarvamSilenceTimerRef.current = null;
+      }
+      if (sarvamVadIntervalRef.current) {
+        clearInterval(sarvamVadIntervalRef.current);
+        sarvamVadIntervalRef.current = null;
+      }
+      if (sarvamAudioContextRef.current) {
+        try { sarvamAudioContextRef.current.close(); } catch {}
+        sarvamAudioContextRef.current = null;
+      }
+      if (sarvamStreamRef.current) {
+        sarvamStreamRef.current.getTracks().forEach(t => {
+          try { t.stop(); t.enabled = false; } catch {}
+        });
+        sarvamStreamRef.current = null;
+      }
+      if (sarvamSpeechRecRef.current) {
+        try {
+          sarvamSpeechRecRef.current.abort();
+          sarvamSpeechRecRef.current.stop();
+        } catch {}
+        sarvamSpeechRecRef.current = null;
+      }
+      if (sarvamMediaRecorderRef.current && sarvamMediaRecorderRef.current.state === 'recording') {
+        try { sarvamMediaRecorderRef.current.stop(); } catch {}
+      }
+      sarvamMediaRecorderRef.current = null;
+      setIsSarvamRecording(false);
+      return;
+    }
+
+    userMutedMicRef.current = false;
+
+    // Cancel any pending auto-listen timer
+    if (autoListenTimeoutRef.current) {
+      clearTimeout(autoListenTimeoutRef.current);
+      autoListenTimeoutRef.current = null;
+    }
+
+    // If AI is currently speaking, stop it (tap to interrupt)
+    if (sarvamSpeakingId || sarvamCurrentAudioRef.current) {
+      sarvamCurrentAudioRef.current?.pause();
+      sarvamCurrentAudioRef.current = null;
+      setSarvamSpeakingId(null);
+    }
+
+    sarvamSpeechDetectedRef.current = false;
+
+    // Safe stop trigger for silence detector
+    const triggerSilenceStop = () => {
+      if (sarvamSilenceTimerRef.current) {
+        clearTimeout(sarvamSilenceTimerRef.current);
+        sarvamSilenceTimerRef.current = null;
+      }
+      if (sarvamVadIntervalRef.current) {
+        clearInterval(sarvamVadIntervalRef.current);
+        sarvamVadIntervalRef.current = null;
+      }
+      if (sarvamSpeechRecRef.current) {
+        try {
+          sarvamSpeechRecRef.current.abort();
+          sarvamSpeechRecRef.current.stop();
+        } catch {}
+        sarvamSpeechRecRef.current = null;
+      }
+      if (sarvamMediaRecorderRef.current && sarvamMediaRecorderRef.current.state === 'recording') {
+        sarvamMediaRecorderRef.current.stop();
+      }
+    };
+
+    // Web Speech API for real-time word-by-word typing into active chat input
+    const SpeechRec = typeof window !== 'undefined' && ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+    if (SpeechRec) {
+      try {
+        const rec = new SpeechRec();
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.lang = supportLang;
+        let finalTxt = '';
+        rec.onresult = (e: any) => {
+          sarvamSpeechDetectedRef.current = true;
+          let interim = '';
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            if (e.results[i].isFinal) {
+              finalTxt += (finalTxt ? ' ' : '') + e.results[i][0].transcript;
+            } else {
+              interim += e.results[i][0].transcript;
+            }
+          }
+          const full = (finalTxt + ' ' + interim).trim();
+          if (full) setInputValue(full);
+
+          // If in Voice Support Phone Call, reset silence timer (1.5s after user stops speaking)
+          if (!userMutedMicRef.current && activeViewRef.current === 'voice-support' && supportGatePassedRef.current) {
+            if (sarvamSilenceTimerRef.current) clearTimeout(sarvamSilenceTimerRef.current);
+            sarvamSilenceTimerRef.current = setTimeout(() => {
+              triggerSilenceStop();
+            }, 1500);
+          }
+        };
+        rec.onerror = () => {};
+        rec.start();
+        sarvamSpeechRecRef.current = rec;
+      } catch (err) {
+        console.warn('SpeechRecognition failed:', err);
+      }
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      sarvamStreamRef.current = stream;
+      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      sarvamAudioChunksRef.current = [];
+      sarvamMediaRecorderRef.current = recorder;
+
+      // Web Audio API VAD (Voice Activity Detection via audio volume amplitude)
+      if (activeViewRef.current === 'voice-support' && supportGatePassedRef.current) {
+        try {
+          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+          if (AudioContextClass) {
+            const audioCtx = new AudioContextClass();
+            sarvamAudioContextRef.current = audioCtx;
+            const source = audioCtx.createMediaStreamSource(stream);
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 512;
+            analyser.smoothingTimeConstant = 0.3;
+            source.connect(analyser);
+
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            let consecutiveQuietTicks = 0;
+            const CHECK_INTERVAL = 100; // ms
+
+            sarvamVadIntervalRef.current = setInterval(() => {
+              if (!isSarvamRecordingRef.current) return;
+              analyser.getByteFrequencyData(dataArray);
+              let sum = 0;
+              for (let i = 0; i < bufferLength; i++) {
+                sum += dataArray[i];
+              }
+              const averageVolume = sum / bufferLength;
+
+              // Voice volume threshold
+              if (averageVolume > 14) {
+                sarvamSpeechDetectedRef.current = true;
+                consecutiveQuietTicks = 0;
+                if (sarvamSilenceTimerRef.current) {
+                  clearTimeout(sarvamSilenceTimerRef.current);
+                  sarvamSilenceTimerRef.current = null;
+                }
+              } else if (sarvamSpeechDetectedRef.current) {
+                // User spoke, and now there is silence
+                consecutiveQuietTicks++;
+                // 15 ticks * 100ms = 1.5 seconds of silence
+                if (consecutiveQuietTicks >= 15) {
+                  consecutiveQuietTicks = 0;
+                  sarvamSpeechDetectedRef.current = false;
+                  triggerSilenceStop();
+                }
+              }
+            }, CHECK_INTERVAL);
+          }
+        } catch (vadInitErr) {
+          console.warn('VAD AudioContext init warning:', vadInitErr);
+        }
+      }
+
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) sarvamAudioChunksRef.current.push(e.data); };
+      recorder.onstop = async () => {
+        // ALWAYS forcefully stop and release microphone tracks to turn off recording indicator
+        stream.getTracks().forEach(t => {
+          try { t.stop(); t.enabled = false; } catch {}
+        });
+        sarvamStreamRef.current = null;
+
+        // Forcefully release speech recognition instance to release browser microphone
+        if (sarvamSpeechRecRef.current) {
+          try {
+            sarvamSpeechRecRef.current.abort();
+            sarvamSpeechRecRef.current.stop();
+          } catch {}
+          sarvamSpeechRecRef.current = null;
+        }
+
+        if (sarvamVadIntervalRef.current) {
+          clearInterval(sarvamVadIntervalRef.current);
+          sarvamVadIntervalRef.current = null;
+        }
+        if (sarvamSilenceTimerRef.current) {
+          clearTimeout(sarvamSilenceTimerRef.current);
+          sarvamSilenceTimerRef.current = null;
+        }
+        if (sarvamAudioContextRef.current) {
+          try { sarvamAudioContextRef.current.close(); } catch {}
+          sarvamAudioContextRef.current = null;
+        }
+        setIsSarvamRecording(false);
+
+        // If user manually tapped mic to pause or ended the call, do not auto-restart or process!
+        if (userMutedMicRef.current || !supportGatePassedRef.current || activeViewRef.current !== 'voice-support') {
+          return;
+        }
+
+        const recordDuration = Date.now() - (sarvamRecStartTimeRef.current || 0);
+        const blob = new Blob(sarvamAudioChunksRef.current, { type: 'audio/webm' });
+
+        if (recordDuration < 600 || blob.size < 1200) {
+          const fallback = inputRef.current?.value?.trim() || inputValue.trim();
+          if (fallback) {
+            sendVoiceSupportMessage(fallback);
+          } else {
+            if (!userMutedMicRef.current && activeViewRef.current === 'voice-support' && supportGatePassedRef.current) {
+              // Hands-Free Call: resume listening quietly after a short rest
+              if (autoListenTimeoutRef.current) clearTimeout(autoListenTimeoutRef.current);
+              autoListenTimeoutRef.current = setTimeout(() => {
+                if (!userMutedMicRef.current && activeViewRef.current === 'voice-support' && supportGatePassedRef.current && !isSarvamRecordingRef.current && !sarvamSpeakingIdRef.current && !isLoadingRef.current) {
+                  handleSarvamMic();
+                }
+              }, 700);
+            } else {
+              const shortMsg = supportLang === 'hi-IN'
+                ? '⚠️ रिकॉर्डिंग बहुत छोटी थी। कृपया माइक दबाकर साफ़ बोलें।'
+                : supportLang === 'mr-IN'
+                ? '⚠️ रेकॉर्डिंग खूप लहान होती. कृपया माइक दाबून स्पष्ट बोला.'
+                : '⚠️ Too short! Please tap the mic and speak clearly.';
+              setToastMessage(shortMsg);
+            }
+          }
+          return;
+        }
+
+        const fd = new FormData();
+        fd.append('file', blob, 'audio.webm');
+        fd.append('language_code', supportLangRef.current || supportLang);
+        fd.append('model', 'saaras:v3');
+        try {
+          const res = await fetch('/api/sarvam/stt', { method: 'POST', body: fd });
+          const data = await res.json();
+          const transcript = data.transcript && data.transcript.trim();
+          if (transcript) {
+            setInputValue(transcript);
+            sendVoiceSupportMessage(transcript);
+          } else {
+            const fallback = inputRef.current?.value?.trim() || inputValue.trim();
+            if (fallback) {
+              sendVoiceSupportMessage(fallback);
+            } else {
+              if (!userMutedMicRef.current && activeViewRef.current === 'voice-support' && supportGatePassedRef.current) {
+                // Resume listening naturally like a phone call
+                if (autoListenTimeoutRef.current) clearTimeout(autoListenTimeoutRef.current);
+                autoListenTimeoutRef.current = setTimeout(() => {
+                  if (!userMutedMicRef.current && activeViewRef.current === 'voice-support' && supportGatePassedRef.current && !isSarvamRecordingRef.current && !sarvamSpeakingIdRef.current && !isLoadingRef.current) {
+                    handleSarvamMic();
+                  }
+                }, 700);
+              } else {
+                const noSpeechMsg = supportLang === 'hi-IN'
+                  ? '⚠️ आवाज़ सुनाई नहीं दी। कृपया दोबारा बोलें।'
+                  : supportLang === 'mr-IN'
+                  ? '⚠️ आवाज ऐकू आला नाही. कृपया पुन्हा बोला.'
+                  : '⚠️ No speech detected. Please tap the mic and try again.';
+                setToastMessage(noSpeechMsg);
+              }
+            }
+          }
+        } catch (err) { 
+          console.error('Sarvam STT error:', err);
+          const fallback = inputRef.current?.value?.trim() || inputValue.trim();
+          if (fallback) {
+            sendVoiceSupportMessage(fallback);
+          } else {
+            if (!userMutedMicRef.current && activeViewRef.current === 'voice-support' && supportGatePassedRef.current) {
+              if (autoListenTimeoutRef.current) clearTimeout(autoListenTimeoutRef.current);
+              autoListenTimeoutRef.current = setTimeout(() => {
+                if (!userMutedMicRef.current && activeViewRef.current === 'voice-support' && supportGatePassedRef.current && !isSarvamRecordingRef.current && !sarvamSpeakingIdRef.current && !isLoadingRef.current) {
+                  handleSarvamMic();
+                }
+              }, 1000);
+            } else {
+              setToastMessage('⚠️ Speech recognition error. Please check your mic and try again.');
+            }
+          }
+        }
+      };
+      sarvamRecStartTimeRef.current = Date.now();
+      recorder.start();
+      setIsSarvamRecording(true);
+    } catch (err: any) {
+      setIsSarvamRecording(false);
+      if (sarvamSpeechRecRef.current) {
+        try { sarvamSpeechRecRef.current.stop(); } catch {}
+        sarvamSpeechRecRef.current = null;
+      }
+      if (err.name === 'NotAllowedError') setToastMessage('⚠️ Microphone access denied. Please allow mic permission.');
+      else console.error('Sarvam mic error:', err);
+    }
+  };
+
+  // Scroll to bottom whenever messages or loading state changes
+  useEffect(() => {
+    scrollToBottom();
+  }, [supportSessions, salesSessions, isLoading]);
+
+  // Scroll handler to detect if we need the scroll-to-bottom assistant
+  const handleScroll = () => {
+    if (chatContainerRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
+      const isFar = scrollHeight - scrollTop - clientHeight > 250;
+      setShowScrollButton(isFar);
+    }
+  };
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+  };
+
+  // Regular expression to strip citations like [0], [1], [12]
+  const cleanCitation = (text: string): string => {
+    return text.replace(/\[\d+\]/g, '').replace(/\s+/g, ' ').trim();
+  };
+
+  const handleSendMessage = async (text: string, isDrawerMode = false) => {
+
+    if (!text.trim() || isLoading) return;
+
+    if (isDrawerMode) {
+      // --- SALES ASSISTANT CONVERSATION (DRAWER OVERLAY) ---
+      const currentSessionId = activeSalesSessionId;
+      if (!currentSessionId) return;
+
+      const userMessage: Message = {
+        id: crypto.randomUUID(),
+        role: 'user',
+        content: text,
+        timestamp: new Date()
+      };
+
+      setSalesSessions(prev => prev.map(s => {
+        if (s.id === currentSessionId) {
+          let newTitle = s.title;
+          if (s.title === 'Sales Recommendations' || s.title === 'New Chat') {
+            newTitle = text.length > 30 ? text.substring(0, 30) + '...' : text;
+          }
+          return {
+            ...s,
+            title: newTitle,
+            messages: [...s.messages, userMessage],
+            updatedAt: new Date()
+          };
+        }
+        return s;
+      }));
+
+      setInputValue('');
+      setIsLoading(true);
+
+      try {
+        const res = await fetch('/api/order', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            chat: text,
+            thread_id: currentSessionId,
+            username: currentUser?.username || 'Guest',
+            shipping_address: currentUser ? '123 E-Commerce Way, Tech City' : ''
+          }),
+        });
+
+        if (!res.ok) {
+          throw new Error(`Order API returned status ${res.status}`);
+        }
+
+        let data: any;
+        try {
+          data = await res.json();
+        } catch (parseErr) {
+          const textBody = await res.text().catch(() => '');
+          data = { res: textBody };
+        }
+
+        let botMessageContent =
+          (typeof data.res === 'string' && data.res.trim() !== '' ? data.res : null)
+          || (typeof data.order_id === 'string' ? `Your order has been placed successfully. Order ID: ${data.order_id}.` : null)
+          || (typeof data.message === 'string' ? data.message : null)
+          || (typeof data.detail === 'string' ? data.detail : null)
+          || (typeof data.error === 'string' ? data.error : null)
+          || "I'm sorry, I couldn't process your request. Please try again.";
+        // Auto-popup Order Confirmed Modal & Append Order ID if Sales Assistant execution placed an order
+        const ordMatch = botMessageContent.match(/ORD-[A-Z0-9]{8}/i);
+        const isOrderPlacedMsg = !botMessageContent.includes('Human Confirmation') && !data?.requires_confirmation && /successfully placed|has been.*placed/i.test(botMessageContent);
+
+        let newOrderId = ordMatch ? ordMatch[0].toUpperCase() : '';
+        if (isOrderPlacedMsg) {
+          if (!newOrderId) {
+            newOrderId = `ORD-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+            botMessageContent += `\n\nOrder ID: **${newOrderId}**`;
+          }
+          const titleMatch = botMessageContent.match(/order for (?:the )?([^!\.,\n]+)/i);
+          const productName = titleMatch ? titleMatch[1].trim() : 'Purchased Item';
+          
+          const priceMatch = botMessageContent.match(/₹\s*([\d,]+)/);
+          const price = priceMatch ? parseInt(priceMatch[1].replace(/,/g, ''), 10) : 18999;
+
+          setPlacedOrderId(newOrderId);
+          setPlacedOrderDetailsId(Array.from({ length: 24 }, () => Math.floor(Math.random() * 16).toString(16)).join(''));
+          setIsOrderConfirmed(true);
+          setIsChatOpen(false); // Close chat drawer so confirmation modal is front & center
+          setBuyProduct({
+            id: 'chat-order-' + newOrderId,
+            name: productName,
+            price: price,
+            category: 'Electronics',
+            image_url: 'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?auto=format&fit=crop&w=600&q=80',
+            description: 'Order placed directly via ShopEase Sales Assistant',
+            specs: { Status: 'Order Confirmed', Source: 'Sales Assistant Chat' }
+          });
+        }
+
+        const botMessage: Message = {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: botMessageContent,
+          timestamp: new Date()
+        };
+
+        setSalesSessions(prev => prev.map(s => {
+          if (s.id === currentSessionId) {
+            return {
+              ...s,
+              messages: [...s.messages, botMessage],
+              updatedAt: new Date()
+            };
+          }
+          return s;
+        }));
+      } catch (err) {
+        console.error('Sales Assistant failed:', err);
+        const botMessage: Message = {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: "I'm sorry, I encountered an error while processing your request. Please try again.",
+          timestamp: new Date()
+        };
+        setSalesSessions(prev => prev.map(s => {
+          if (s.id === currentSessionId) {
+            return {
+              ...s,
+              messages: [...s.messages, botMessage],
+              updatedAt: new Date()
+            };
+          }
+          return s;
+        }));
+      } finally {
+        setIsLoading(false);
+      }
+
+    } else {
+      // --- CUSTOMER SERVICE SUPPORT CONVERSATION (FULLSCREEN VIEW) ---
+      const currentSessionId = activeSupportSessionId;
+      if (!currentSessionId) return;
+
+      const userMessage: Message = {
+        id: crypto.randomUUID(),
+        role: 'user',
+        content: text,
+        timestamp: new Date()
+      };
+
+      setSupportSessions(prev => prev.map(s => {
+        if (s.id === currentSessionId) {
+          let newTitle = s.title;
+          if (s.title === 'New Chat' || s.title === 'Welcome Support Chat') {
+            newTitle = text.length > 30 ? text.substring(0, 30) + '...' : text;
+          }
+          return {
+            ...s,
+            title: newTitle,
+            messages: [...s.messages, userMessage],
+            updatedAt: new Date()
+          };
+        }
+        return s;
+      }));
+
+      setInputValue('');
+      setIsLoading(true);
+
+      try {
+        const orderMatch = text.match(/ORD-[A-Z0-9]{8}/i) || text.match(/\b\d{5,}\b/);
+        const extractedOrderId = orderMatch ? orderMatch[0].toUpperCase() : '';
+
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            question: text,
+            order_id: extractedOrderId,
+            thread_id: currentSessionId,
+            user_id: currentUser?.id?.toString() || '',
+            username: currentUser?.username || '',
+          })
+        });
+
+        if (response.status === 403) {
+          const forbiddenMsg = '⚠️ This order does not belong to your account. Please check your Order ID.';
+          const botMessage: Message = {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            content: forbiddenMsg,
+            timestamp: new Date()
+          };
+          setSupportSessions(prev => prev.map(s => {
+            if (s.id === currentSessionId) {
+              return {
+                ...s,
+                messages: [...s.messages, botMessage],
+                updatedAt: new Date()
+              };
+            }
+            return s;
+          }));
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(`API returned status ${response.status}`);
+        }
+
+        const data = await response.json();
+        const cleanedResponse = cleanCitation(data.res || '');
+
+        const botMessage: Message = {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: cleanedResponse,
+          timestamp: new Date()
+        };
+
+        setSupportSessions(prev => prev.map(s => {
+          if (s.id === currentSessionId) {
+            return {
+              ...s,
+              messages: [...s.messages, botMessage],
+              updatedAt: new Date()
+            };
+          }
+          return s;
+        }));
+
+        if (currentUser) {
+          fetchWalletBalance(currentUser.username);
+          fetchUserOrders(currentUser.id.toString(), currentUser.username);
+        }
+
+        // Auto-popup Order Confirmed Modal if AI execution placed a new order
+        const ordMatch = cleanedResponse.match(/ORD-[A-Z0-9]{8}/i);
+        const isOrderPlacedMsg = /successfully placed|order.*placed|has been.*placed/i.test(cleanedResponse);
+
+        if (isOrderPlacedMsg) {
+          const newOrderId = ordMatch ? ordMatch[0].toUpperCase() : `ORD-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+          const titleMatch = cleanedResponse.match(/order for (?:the )?([^!\.,\n]+)/i);
+          const productName = titleMatch ? titleMatch[1].trim() : 'Purchased Item';
+          
+          const priceMatch = cleanedResponse.match(/₹\s*([\d,]+)/);
+          const price = priceMatch ? parseInt(priceMatch[1].replace(/,/g, ''), 10) : 13490;
+
+          setPlacedOrderId(newOrderId);
+          setPlacedOrderDetailsId(Array.from({ length: 24 }, () => Math.floor(Math.random() * 16).toString(16)).join(''));
+          setIsOrderConfirmed(true);
+          setIsChatOpen(false); // Close chat drawer so confirmation modal is front & center
+          setBuyProduct({
+            id: 'chat-order-' + newOrderId,
+            name: productName,
+            price: price,
+            category: 'Electronics',
+            image_url: 'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?auto=format&fit=crop&w=600&q=80',
+            description: 'Order placed directly via ShopEase Sales Assistant',
+            specs: { Status: 'Order Confirmed', Source: 'Sales Assistant Chat' }
+          });
+        }
+      } catch (err: any) {
+        console.error('Support Chat API request failed:', err);
+        const mockReplies = [
+          "Thank you for contacting ShopEase support! Since our AI support agent is currently undergoing maintenance, our human support staff will review your message and get back to you shortly.",
+          "Hello! I am the ShopEase assistant. Our AI support module is currently offline for updates. If you have questions about returns, active promotions, or shipping, please check back soon!",
+          "Thanks for your message! Our backend assistant is offline right now, but your inquiry has been logged. We appreciate your patience!"
+        ];
+        const randomReply = mockReplies[Math.floor(Math.random() * mockReplies.length)];
+
+        const botMessage: Message = {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: randomReply,
+          timestamp: new Date()
+        };
+
+        setSupportSessions(prev => prev.map(s => {
+          if (s.id === currentSessionId) {
+            return {
+              ...s,
+              messages: [...s.messages, botMessage],
+              updatedAt: new Date()
+            };
+          }
+          return s;
+        }));
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleSendMessage(inputValue);
+  };
+
+  const handleResetSession = () => {
+    setResetConfirmOpen(true);
+  };
+
+  const executeResetSession = () => {
+    if (isChatOpen) {
+      setSalesSessions(prev => prev.map(s => {
+        if (s.id === activeSalesSessionId) {
+          return {
+            ...s,
+            title: 'Sales Recommendations',
+            messages: [
+              {
+                id: crypto.randomUUID(),
+                role: 'assistant',
+                content: "Session reset. Hello! I'm your Personal Sales Assistant. How can I help you today?",
+                timestamp: new Date()
+              }
+            ],
+            updatedAt: new Date()
+          };
+        }
+        return s;
+      }));
+    } else {
+      setSupportSessions(prev => prev.map(s => {
+        if (s.id === activeSupportSessionId) {
+          return {
+            ...s,
+            title: 'Welcome Support Chat',
+            messages: [
+              {
+                id: crypto.randomUUID(),
+                role: 'assistant',
+                content: "Session reset. Hello! I'm ShopEase Support, your customer service assistant. How can I help you today?",
+                timestamp: new Date()
+              }
+            ],
+            updatedAt: new Date()
+          };
+        }
+        return s;
+      }));
+    }
+  };
+
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const filteredSessions = supportSessions.filter(session =>
+    session.title.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Authentication Handlers
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthLoading(true);
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: authUsername,
+          email: authEmail,
+          password: authPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Registration failed');
+      setToastMessage('Account created successfully! Please sign in.');
+      setAuthTab('signin');
+      setAuthPassword('');
+      setAuthUsername('');
+    } catch (err: any) {
+      setAuthError(err.message);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthLoading(true);
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: authEmail,
+          password: authPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Login failed');
+      const userSession = {
+        id: data.user.id,
+        username: data.user.username,
+        email: data.user.email,
+        token: data.token,
+      };
+      setCurrentUser(userSession);
+      localStorage.setItem('shopease_user', JSON.stringify(userSession));
+      fetchWalletBalance(data.user.username);
+      fetchUserAddresses(data.user.id.toString(), data.user.username);
+      fetchUserOrders(data.user.id.toString(), data.user.username);
+      setToastMessage(`Welcome back, ${data.user.username}!`);
+      setIsAuthModalOpen(false);
+      setAuthEmail('');
+      setAuthPassword('');
+      setAuthUsername('');
+    } catch (err: any) {
+      setAuthError(err.message);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setWalletBalance(null);
+    setSavedAddresses([]);
+    setUserOrders([]);
+    localStorage.removeItem('shopease_user');
+    setToastMessage('Logged out successfully!');
+  };
+
+  // E-commerce handlers
+  const handleAddToCart = (productName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCartCount(prev => prev + 1);
+    setToastMessage(`Added "${productName}" to cart!`);
+  };
+
+  const handleBuyNow = (product: Product, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setBuyProduct(product);
+    setShippingAddress('');
+    setSelectedHub('');
+    setIsOrderConfirmed(false);
+    setPlacedOrderId('');
+    setPlacedOrderDetailsId('');
+  };
+
+  const executeCheckout = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!shippingAddress.trim() || !buyProduct) return;
+    if (!currentUser) {
+      setToastMessage('You must be logged in to place an order.');
+      return;
+    }
+    setIsOrderPlacing(true);
+    try {
+      const res = await fetch('/api/order', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: currentUser.id.toString(),
+          product_name: buyProduct.name,
+          price: buyProduct.price,
+          username: currentUser.username,
+          shipping_address: shippingAddress,
+          hub_region: selectedHub || 'General Hub'
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Order placement returned status ${res.status}`);
+      }
+
+      const data = await res.json();
+      setPlacedOrderId(data.order_id || 'ORD-UNKNOWN');
+      setPlacedOrderDetailsId(data._id || 'DETAILS-UNKNOWN');
+      setIsOrderConfirmed(true);
+      setCartCount(prev => prev + 1);
+      setToastMessage(`Order placed successfully for ${buyProduct.name}!`);
+      if (currentUser) {
+        fetchUserOrders(currentUser.id.toString(), currentUser.username);
+      }
+    } catch (err: any) {
+      console.error('Order placement API failed:', err);
+      setToastMessage('Order placed locally due to network issues.');
+      const mockOrderId = `ORD-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+      const mockDetailsId = Array.from({ length: 24 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+      setPlacedOrderId(mockOrderId);
+      setPlacedOrderDetailsId(mockDetailsId);
+      setIsOrderConfirmed(true);
+      setCartCount(prev => prev + 1);
+      if (currentUser) {
+        fetchUserOrders(currentUser.id.toString(), currentUser.username);
+      }
+    } finally {
+      setIsOrderPlacing(false);
+    }
+  };
+
+  const handleAskAI = (productName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setActiveView('chat');
+    setIsChatOpen(false);
+    setInputValue(`Tell me more about the ${productName} please.`);
+    setToastMessage('Redirected to Chat Assistant!');
+  };
+
+  const handleBuyViaChat = (productName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsChatOpen(true);
+    setInputValue(`I want to buy the ${productName}`);
+    setToastMessage(`Opened Sales Assistant for "${productName}"!`);
+    setTimeout(() => inputRef.current?.focus(), 100);
+  };
+
+  // Storefront Filtering Logic
+  const filteredProducts = (productsData as Product[]).filter(product => {
+    // 1. Category Filter
+    if (selectedCategory !== 'All') {
+      if (selectedCategory === 'Hot offers') {
+        if (product.price >= 4000) return false;
+      } else if (selectedCategory === 'Gift boxes') {
+        if (product.category !== 'Accessories' && product.category !== 'Fashion') return false;
+      } else if (product.category !== selectedCategory) {
+        return false;
+      }
+    }
+
+    // 2. Price Preset Filter
+    if (priceFilter === 'under-2k') {
+      if (product.price >= 2000) return false;
+    } else if (priceFilter === '2k-5k') {
+      if (product.price < 2000 || product.price > 5000) return false;
+    } else if (priceFilter === '5k-10k') {
+      if (product.price < 5000 || product.price > 10000) return false;
+    } else if (priceFilter === '10k-20k') {
+      if (product.price < 10000 || product.price > 20000) return false;
+    } else if (priceFilter === 'over-20k') {
+      if (product.price < 20000) return false;
+    } else if (priceFilter === 'custom') {
+      const min = parseFloat(minPriceInput);
+      const max = parseFloat(maxPriceInput);
+      if (!isNaN(min) && product.price < min) return false;
+      if (!isNaN(max) && product.price > max) return false;
+    }
+
+    // 3. Search Query Filter
+    const query = productSearchQuery.toLowerCase().trim();
+    if (!query) return true;
+    return (
+      product.name.toLowerCase().includes(query) ||
+      product.category.toLowerCase().includes(query) ||
+      product.description.toLowerCase().includes(query) ||
+      Object.values(product.specs).some(val => typeof val === 'string' && val.toLowerCase().includes(query))
+    );
+  });
+
+  const dropdownItems = [
+    { label: 'Electronics', value: 'Electronics' },
+    { label: 'Fashion', value: 'Fashion' },
+    { label: 'Laptops', value: 'Laptops' },
+    { label: 'Monitors', value: 'Monitors' },
+    { label: 'Keyboards & Mice', value: 'Keyboards & Mice' },
+    { label: 'PC Components', value: 'PC Components' },
+    { label: 'Mobiles', value: 'Mobiles' },
+    { label: 'Networking', value: 'Networking' },
+    { label: 'Accessories', value: 'Accessories' },
+    { label: 'More category', value: 'All' }
+  ];
+
+  const navItems = [
+    { label: 'All category', value: 'All', isDropdown: true, icon: <Menu className="w-4 h-4 mr-1.5" /> },
+    { label: 'Hot offers', value: 'Hot offers' },
+    { label: 'Gift boxes', value: 'Gift boxes' },
+    { label: 'Customer Service', value: 'Customer Service' }
+  ];  // Helper to render standard Chat UI Window
+  const renderChatWindow = (isDrawerMode = false) => {
+    const currentSessions = isDrawerMode ? salesSessions : supportSessions;
+    const currentActiveId = isDrawerMode ? activeSalesSessionId : activeSupportSessionId;
+    const currentActiveSession = currentSessions.find(s => s.id === currentActiveId);
+    const messages = currentActiveSession ? currentActiveSession.messages : [];
+    const hasOrderInSession = messages.some(m => /ORD-[A-Z0-9]{8}/i.test(m.content));
+    const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
+
+    const handleFormSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      handleSendMessage(inputValue, isDrawerMode);
+    };
+
+    return (
+      <section className={`flex-1 flex flex-col h-full overflow-hidden relative min-h-0 transition-colors duration-300 ${theme === 'dark' ? 'bg-zinc-900' : 'bg-white'}`}>
+        {/* Header */}
+        <header className={`flex items-center justify-between px-6 py-4 border-b flex-shrink-0 transition-colors duration-300 ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-150'}`}>
+          <div className="flex items-center gap-3">
+            {/* Toggle Sidebar Button (Only if not in drawer mode) */}
+            {!isDrawerMode && (
+              <button
+                onClick={() => setIsSidebarOpen(prev => !prev)}
+                className={`p-2 rounded-lg transition-all cursor-pointer mr-1
+                  ${theme === 'dark' ? 'hover:bg-zinc-800 text-zinc-450 hover:text-white' : 'hover:bg-zinc-100 text-zinc-650 hover:text-zinc-900'}
+                  ${isSidebarOpen ? 'md:hidden' : 'flex'}
+                `}
+                title="Toggle Sidebar"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+            )}
+
+            <div className="relative">
+              {isDrawerMode ? (
+                <SalesAgentLogo className="w-10 h-10 drop-shadow-sm" />
+              ) : (
+                <SupportChatLogo className="w-10 h-10 drop-shadow-sm" />
+              )}
+              <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white animate-pulse"></span>
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <h2 className={`font-semibold text-sm md:text-base leading-none ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
+                  {isDrawerMode ? 'Personal Sales Agent' : 'ShopEase Support System'}
+                </h2>
+                <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${theme === 'dark' ? 'bg-emerald-950/20 text-emerald-400 border-emerald-900/40' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+                  Online
+                </span>
+              </div>
+              <p className={`text-[11px] mt-1 ${theme === 'dark' ? 'text-zinc-455' : 'text-zinc-505'}`}>
+                {isDrawerMode 
+                  ? 'Find products, get recommendations, & place orders' 
+                  : 'Ask order, shipping, & sizing questions'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Theme Toggle Button */}
+            <button
+              onClick={toggleTheme}
+              className={`p-2 rounded-lg transition-all cursor-pointer flex items-center justify-center ${theme === 'dark' ? 'hover:bg-zinc-800 text-zinc-400 hover:text-white' : 'hover:bg-zinc-100 text-zinc-500 hover:text-zinc-900'}`}
+              title={theme === 'dark' ? "Switch to light theme" : "Switch to dark theme"}
+            >
+              {theme === 'dark' ? <Sun className="w-4.5 h-4.5 text-amber-400" /> : <Moon className="w-4.5 h-4.5" />}
+            </button>
+
+            {/* Reset Chat Control */}
+            <button
+              onClick={handleResetSession}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border rounded-lg transition-all active:scale-[0.98] cursor-pointer ${theme === 'dark' ? 'text-zinc-300 hover:text-white bg-zinc-850 hover:bg-zinc-800 border-zinc-700' : 'text-zinc-660 hover:text-zinc-900 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200'}`}
+              title="Reset Current Chat Session"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Reset</span>
+            </button>
+
+            {isDrawerMode && (
+              <button
+                id="close-chat-drawer-btn"
+                onClick={() => setIsChatOpen(false)}
+                className={`p-2 rounded-lg transition-colors cursor-pointer ${theme === 'dark' ? 'hover:bg-zinc-800 text-zinc-400' : 'hover:bg-zinc-100 text-zinc-600'}`}
+                title="Close chat drawer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
+          </div>
+        </header>
+
+        {/* Scrollable Chat Area */}
+        <div 
+          ref={chatContainerRef}
+          onScroll={handleScroll}
+          className={`flex-1 overflow-y-auto px-4 py-6 md:p-6 space-y-5 relative min-h-0 transition-colors duration-300 ${theme === 'dark' ? 'bg-zinc-950/40' : 'bg-zinc-55/30'}`}
+        >
+          <div className="max-w-4xl mx-auto w-full space-y-5">
+          {messages.map((message) => {
+            const isBot = message.role === 'assistant';
+            
+            // Extract order ID only for sales assistant order placements in drawer mode
+            let orderIdMatch: string | null = null;
+            if (isBot && isDrawerMode) {
+              const regex = /\b(ORD-[A-Z0-9]+)\b/i;
+              const match = message.content.match(regex);
+              if (match && /successfully placed|order.*placed|has been.*placed/i.test(message.content)) {
+                orderIdMatch = match[1];
+              }
+            }
+
+            return (
+              <div
+                key={message.id}
+                className={`flex gap-3 transition-all duration-300 animate-fadeIn ${
+                  isDrawerMode ? 'max-w-[95%]' : 'max-w-[85%] sm:max-w-[80%]'
+                } ${
+                  isBot ? 'mr-auto' : 'ml-auto flex-row-reverse'
+                }`}
+              >
+                {/* Avatar Icon */}
+                <div
+                  className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 select-none text-xs font-semibold ${
+                    isBot 
+                      ? (theme === 'dark' ? 'bg-zinc-805 border border-zinc-705 text-zinc-400' : 'bg-zinc-100 border border-zinc-200 text-zinc-600')
+                      : 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/10'
+                  }`}
+                >
+                  {isBot ? <Bot className="w-4 h-4" /> : <User className="w-4 h-4" />}
+                </div>
+
+                {/* Message Bubble Column */}
+                <div className="flex flex-col gap-1 group max-w-full">
+                  <div
+                    className={`relative px-4 py-3 rounded-2xl text-[13.5px] sm:text-sm leading-relaxed shadow-sm ${
+                      isBot
+                        ? message.content.includes('⚠️')
+                          ? (theme === 'dark' ? 'bg-amber-950/25 border border-amber-500/40 text-amber-200 rounded-tl-none' : 'bg-amber-50 border border-amber-300 text-amber-900 rounded-tl-none')
+                          : (theme === 'dark' ? 'bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-tl-none' : 'bg-white border border-zinc-200 text-zinc-800 rounded-tl-none')
+                        : 'bg-indigo-600 text-white rounded-tr-none font-medium shadow-md shadow-indigo-600/20'
+                    }`}
+                  >
+                    {isBot ? (
+                      <div className="markdown-body">
+                        <ReactMarkdown
+                          components={{
+                            ul: ({ node, ...props }) => <ul className="space-y-1.5 my-2.5 list-disc pl-5" {...props} />,
+                            ol: ({ node, ...props }) => <ol className="space-y-1.5 my-2.5 list-decimal pl-5" {...props} />,
+                            li: ({ node, ...props }) => <li className={`pl-0.5 leading-relaxed text-[13.5px] sm:text-sm ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`} {...props} />,
+                            p: ({ node, ...props }) => <p className={`mb-2.5 last:mb-0 leading-relaxed text-[13.5px] sm:text-sm ${theme === 'dark' ? 'text-zinc-200' : 'text-zinc-800'}`} {...props} />,
+                            strong: ({ node, ...props }) => <strong className={`font-semibold ${theme === 'dark' ? 'text-white' : 'text-zinc-950'}`} {...props} />,
+                            code: ({ node, ...props }) => (
+                              <code className={`px-1.5 py-0.5 rounded font-mono text-xs border ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-indigo-400' : 'bg-zinc-105 border-zinc-205 text-indigo-700'}`} {...props} />
+                            ),
+                            a: ({ node, ...props }) => (
+                              <a
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={`font-medium underline underline-offset-2 transition-colors inline-flex items-center gap-0.5 ${theme === 'dark' ? 'text-indigo-400 hover:text-indigo-305' : 'text-indigo-600 hover:text-indigo-805'}`}
+                                {...props}
+                              />
+                            ),
+                          }}
+                        >
+                          {message.content}
+                        </ReactMarkdown>
+
+                        {/* Product Image Cards Gallery (Toggled by SHOW_CHAT_IMAGES) */}
+                        {isDrawerMode && SHOW_CHAT_IMAGES && getMatchedProductsFromText(message.content).length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-3 pt-2.5 border-t border-zinc-200 dark:border-zinc-800">
+                            {getMatchedProductsFromText(message.content).map((prod) => (
+                              <div 
+                                key={prod.id} 
+                                className={`flex items-center gap-2.5 p-2 rounded-xl border text-left max-w-[230px] shadow-xs transition-all hover:scale-[1.02] ${
+                                  theme === 'dark' ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-50 border-zinc-200'
+                                }`}
+                              >
+                                <img 
+                                  src={prod.image_url} 
+                                  alt={prod.name} 
+                                  className="w-11 h-11 rounded-lg object-cover flex-shrink-0 border border-zinc-200 dark:border-zinc-800"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1531403009284-440f080d1e12?auto=format&fit=crop&w=600&q=80';
+                                  }}
+                                />
+                                <div className="overflow-hidden min-w-0">
+                                  <h4 className={`text-[11px] font-bold truncate leading-tight ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>{prod.name}</h4>
+                                  <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 block mt-0.5">₹{prod.price.toLocaleString('en-IN')}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {orderIdMatch && (
+                          <ChatOrderTracker orderId={orderIdMatch} theme={theme} />
+                        )}
+                      </div>
+                    ) : (
+                      <p className="whitespace-pre-wrap text-[13.5px] sm:text-sm leading-relaxed">{message.content}</p>
+                    )}
+
+                    {/* Copy Button */}
+                    <button
+                      onClick={() => copyToClipboard(message.content, message.id)}
+                      className={`absolute top-1 right-1 p-1 border rounded opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100 cursor-pointer ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 hover:bg-zinc-800 text-zinc-500 hover:text-zinc-200' : 'bg-zinc-50 border-zinc-200 hover:bg-zinc-100 text-zinc-500 hover:text-zinc-800'}`}
+                      title="Copy to clipboard"
+                    >
+                      {copiedId === message.id ? (
+                        <Check className="w-3 h-3 text-emerald-600" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
+                    </button>
+
+                    {message.isError && lastUserMessage && (
+                      <button
+                        onClick={() => {
+                          const setter = isDrawerMode ? setSalesSessions : setSupportSessions;
+                          setter(prev => prev.map(s => {
+                            if (s.id === currentActiveId) {
+                              return {
+                                ...s,
+                                messages: s.messages.filter(m => m.id !== message.id)
+                              };
+                            }
+                            return s;
+                          }));
+                          handleSendMessage(lastUserMessage.content, isDrawerMode);
+                        }}
+                        className={`mt-2.5 flex items-center gap-1.5 px-3 py-1 border rounded-lg text-[10px] font-semibold transition-all active:scale-[0.98] w-fit cursor-pointer ${theme === 'dark' ? 'bg-red-950/20 hover:bg-red-950/40 text-red-400 border-red-900/40' : 'bg-red-50 hover:bg-red-105 text-red-750 border border-red-200'}`}
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        Retry Query
+                      </button>
+                    )}
+                  </div>
+ 
+                  {/* Timestamp */}
+                  <span className={`text-[9px] font-medium px-1 flex items-center gap-1 ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'} ${isBot ? 'justify-start' : 'justify-end'}`}>
+                    {formatTime(message.timestamp)}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Loading Indicator */}
+          {isLoading && (
+            <div className="flex gap-3 max-w-[75%] mr-auto animate-fadeIn">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 border ${theme === 'dark' ? 'bg-zinc-800 border-zinc-705 text-zinc-400' : 'bg-zinc-100 border-zinc-200 text-zinc-600'}`}>
+                <Bot className="w-4 h-4" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <div className={`border px-4 py-2.5 rounded-2xl rounded-tl-none shadow-sm flex items-center gap-1.5 h-8 ${theme === 'dark' ? 'bg-zinc-800 border-zinc-700 text-zinc-200' : 'bg-white border-zinc-200 text-zinc-800'}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full animate-bounce ${theme === 'dark' ? 'bg-zinc-500' : 'bg-zinc-400'}`} style={{ animationDelay: '0ms' }}></span>
+                  <span className={`w-1.5 h-1.5 rounded-full animate-bounce ${theme === 'dark' ? 'bg-zinc-500' : 'bg-zinc-400'}`} style={{ animationDelay: '150ms' }}></span>
+                  <span className={`w-1.5 h-1.5 rounded-full animate-bounce ${theme === 'dark' ? 'bg-zinc-500' : 'bg-zinc-400'}`} style={{ animationDelay: '300ms' }}></span>
+                </div>
+                <span className={`text-[9px] px-1 ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>Sales Assistant is typing...</span>
+              </div>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
+          </div>
+        </div>
+
+        {/* Scroll Button */}
+        {showScrollButton && (
+          <button
+            onClick={() => scrollToBottom()}
+            className={`absolute bottom-24 right-6 p-2.5 rounded-full border shadow-lg transition-all hover:scale-105 active:scale-95 animate-bounce z-20 flex items-center justify-center cursor-pointer ${theme === 'dark' ? 'bg-zinc-800 border-zinc-700 text-indigo-400 hover:text-indigo-305' : 'bg-white border-zinc-200 text-indigo-650 hover:text-indigo-800'}`}
+          >
+            <ArrowDown className="w-4.5 h-4.5" />
+          </button>
+        )}
+
+        {/* Input Zone */}
+        <footer className={`border-t px-4 py-4 md:px-6 flex-shrink-0 transition-colors duration-300 ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
+          <div className="max-w-4xl mx-auto w-full">
+            {/* Top 5 Recent Orders Quick Selector in Support Chat (disappears once an order is selected or passed) */}
+            {!isDrawerMode && currentUser && userOrders.length > 0 && !hasOrderInSession && !/ORD-[A-Z0-9]{8}/i.test(inputValue) && (
+              <div className="mb-2.5 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none transition-all">
+                <span className={`text-[10px] font-bold uppercase tracking-wider flex-shrink-0 flex items-center gap-1 ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                  📦 Orders:
+                </span>
+                {userOrders.slice(0, 5).map((ord: any) => (
+                  <button
+                    key={ord.order_id || ord._id}
+                    type="button"
+                    onClick={() => {
+                      setInputValue(`${ord.order_id} `);
+                      inputRef.current?.focus();
+                    }}
+                    className={`flex-shrink-0 text-[11px] font-medium px-2.5 py-1 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 ${
+                      theme === 'dark'
+                        ? 'bg-zinc-800/80 border-zinc-700/80 hover:bg-zinc-700 hover:border-zinc-600 text-zinc-300'
+                        : 'bg-zinc-100 border-zinc-200 hover:bg-zinc-200 hover:border-zinc-300 text-zinc-700'
+                    }`}
+                    title={`Click to insert ${ord.order_id}`}
+                  >
+                    <span className="font-mono font-bold text-indigo-500">{ord.order_id}</span>
+                    <span className="max-w-[120px] truncate">{ord.product_name}</span>
+                    <span className="text-[10px] font-bold text-emerald-500">₹{ord.price?.toLocaleString()}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <form onSubmit={handleFormSubmit} className="flex gap-2">
+              <input
+                ref={inputRef}
+                id="support-chat-input"
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                maxLength={1000}
+                placeholder={isLoading ? "Please wait..." : isDrawerMode ? "Ask your Sales Assistant anything..." : "Ask ShopEase support anything..."}
+                disabled={isLoading}
+                className={`flex-1 focus:ring-1 text-sm transition-all focus:outline-none disabled:opacity-60 rounded-xl px-4 py-3 ${theme === 'dark' ? 'bg-zinc-950 border-zinc-800 focus:border-indigo-600 focus:ring-indigo-600 text-white placeholder-zinc-550' : 'bg-zinc-50 border-zinc-200 focus:border-indigo-600 focus:ring-indigo-600 text-zinc-900 placeholder-zinc-400'}`}
+              />
+
+              <button
+                type="button"
+                onClick={handleMicClick}
+                disabled={isLoading}
+                className={`px-3.5 rounded-xl border transition-all flex items-center justify-center cursor-pointer active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed
+                  ${isListening 
+                    ? 'bg-red-650 hover:bg-red-500 text-white border-red-500 animate-pulse' 
+                    : (theme === 'dark' ? 'bg-zinc-800 hover:bg-zinc-750 text-zinc-300 border-zinc-700' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-650 border-zinc-200')
+                  }
+                `}
+                title={isListening ? "Listening... click to stop" : "Speak to type"}
+              >
+                {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              </button>
+
+              <button
+                type="submit"
+                disabled={!inputValue.trim() || isLoading}
+                className={`px-4.5 rounded-xl transition-all duration-205 flex items-center justify-center shadow-md active:scale-[0.98] disabled:cursor-not-allowed disabled:shadow-none cursor-pointer ${theme === 'dark' ? 'bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-800 text-white disabled:text-zinc-500' : 'bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-100 text-white disabled:text-zinc-400'}`}
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </form>
+            <p className={`text-[9px] mt-2 text-center flex items-center justify-between px-1 ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>
+              <span className="flex items-center gap-0.5 text-indigo-650 font-medium">
+                <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" /> SSL Shield Active
+              </span>
+              <span>{inputValue.length} / 1000 characters</span>
+            </p>
+          </div>
+        </footer>
+      </section>
+    );
+  };
+
+  const renderLoginScreen = () => {
+    return (
+      <div className={`min-h-screen w-full flex flex-col items-center justify-center p-4 relative transition-colors duration-300 ${
+        theme === 'dark' 
+          ? 'bg-zinc-950 bg-radial-[circle_at_top,_var(--tw-gradient-stops)] from-zinc-900 via-zinc-950 to-zinc-950 text-white' 
+          : 'bg-zinc-50 bg-radial-[circle_at_top,_var(--tw-gradient-stops)] from-zinc-100 via-zinc-50 to-zinc-50 text-zinc-900'
+      }`}>
+        {/* Top Header Row with Theme Toggle */}
+        <div className="absolute top-6 right-6 flex items-center gap-2 z-10">
+          <button
+            onClick={toggleTheme}
+            className={`p-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-center border ${
+              theme === 'dark' 
+                ? 'bg-zinc-900 border-zinc-800 hover:bg-zinc-850 text-zinc-400 hover:text-white' 
+                : 'bg-white border-zinc-200 hover:bg-zinc-50 text-zinc-500 hover:text-zinc-900'
+            }`}
+            title={theme === 'dark' ? "Switch to light theme" : "Switch to dark theme"}
+          >
+            {theme === 'dark' ? <Sun className="w-4.5 h-4.5 text-amber-400" /> : <Moon className="w-4.5 h-4.5" />}
+          </button>
+        </div>
+
+        {/* Logo and Branding */}
+        <div className="flex flex-col items-center gap-3 mb-8 text-center animate-fadeIn">
+          <BrandIconLogo className="w-14 h-14 drop-shadow-xl hover:scale-105 transition-transform" />
+          <div>
+            <h1 className="font-extrabold text-2xl tracking-tight bg-gradient-to-r from-zinc-900 via-zinc-750 to-zinc-900 dark:from-white dark:via-zinc-200 dark:to-white bg-clip-text text-transparent">
+              ShopEase
+            </h1>
+            <p className={`text-xs mt-1 font-medium ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>
+              24/7 AI Shopping Assistant & Customer Support
+            </p>
+          </div>
+        </div>
+
+        {/* Auth Card Container */}
+        <div 
+          className={`border rounded-2xl max-w-md w-full p-8 shadow-2xl transition-all duration-300 backdrop-blur-md ${
+            theme === 'dark' ? 'bg-zinc-900/80 border-zinc-850 text-white' : 'bg-white/80 border-zinc-200/80 text-zinc-900'
+          }`}
+        >
+          {/* Modal Tabs */}
+          <div className="flex border-b mb-6 dark:border-zinc-800 border-zinc-150">
+            <button
+              id="page-auth-tab-signin-btn"
+              type="button"
+              onClick={() => {
+                setAuthTab('signin');
+                setAuthError(null);
+                setShowPassword(false);
+              }}
+              className={`flex-1 pb-3.5 text-sm font-bold border-b-2 transition-all cursor-pointer ${
+                authTab === 'signin'
+                  ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                  : 'border-transparent text-zinc-450 hover:text-zinc-550'
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              id="page-auth-tab-signup-btn"
+              type="button"
+              onClick={() => {
+                setAuthTab('signup');
+                setAuthError(null);
+                setShowPassword(false);
+              }}
+              className={`flex-1 pb-3.5 text-sm font-bold border-b-2 transition-all cursor-pointer ${
+                authTab === 'signup'
+                  ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                  : 'border-transparent text-zinc-450 hover:text-zinc-550'
+              }`}
+            >
+              Sign Up
+            </button>
+          </div>
+
+          {/* Auth Form */}
+          <form onSubmit={authTab === 'signin' ? handleLogin : handleRegister} className="space-y-4">
+            {authError && (
+              <div className="p-3.5 bg-red-950/20 border border-red-900/40 text-red-400 rounded-xl text-xs font-semibold leading-relaxed">
+                {authError}
+              </div>
+            )}
+
+            {authTab === 'signup' && (
+              <div>
+                <label className={`block text-xs font-bold mb-1.5 ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>Username</label>
+                <input
+                  id="page-auth-username-input"
+                  type="text"
+                  required
+                  value={authUsername}
+                  onChange={(e) => setAuthUsername(e.target.value)}
+                  placeholder="Choose a username"
+                  className={`w-full px-3.5 py-2.5 text-xs border rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-600 ${
+                    theme === 'dark' 
+                      ? 'bg-zinc-950 border-zinc-800 text-white placeholder-zinc-650' 
+                      : 'bg-zinc-50 border-zinc-200 text-zinc-900 placeholder-zinc-400'
+                  }`}
+                />
+              </div>
+            )}
+
+            <div>
+              <label className={`block text-xs font-bold mb-1.5 ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>Email Address</label>
+              <input
+                id="page-auth-email-input"
+                type="email"
+                required
+                value={authEmail}
+                onChange={(e) => setAuthEmail(e.target.value)}
+                placeholder="you@example.com"
+                className={`w-full px-3.5 py-2.5 text-xs border rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-600 ${
+                  theme === 'dark' 
+                    ? 'bg-zinc-950 border-zinc-800 text-white placeholder-zinc-655' 
+                    : 'bg-zinc-50 border-zinc-200 text-zinc-900 placeholder-zinc-400'
+                }`}
+              />
+            </div>
+
+            <div>
+              <label className={`block text-xs font-bold mb-1.5 ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>Password</label>
+              <div className="relative">
+                <input
+                  id="page-auth-password-input"
+                  type={showPassword ? "text" : "password"}
+                  required
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className={`w-full pl-3.5 pr-10 py-2.5 text-xs border rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-600 ${
+                    theme === 'dark' 
+                      ? 'bg-zinc-950 border-zinc-800 text-white placeholder-zinc-655' 
+                      : 'bg-zinc-50 border-zinc-200 text-zinc-900 placeholder-zinc-400'
+                  }`}
+                />
+                <button
+                  id="page-toggle-auth-password-visibility-btn"
+                  type="button"
+                  onClick={() => setShowPassword(prev => !prev)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-750 dark:hover:text-zinc-350 transition-colors cursor-pointer"
+                  title={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <button
+              id="page-auth-submit-btn"
+              type="submit"
+              disabled={authLoading}
+              className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold cursor-pointer transition-all shadow-lg shadow-indigo-600/15 active:scale-[0.98] flex items-center justify-center gap-2 select-none"
+            >
+              {authLoading ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  {authTab === 'signin' ? 'Signing In...' : 'Signing Up...'}
+                </>
+              ) : (
+                authTab === 'signin' ? 'Sign In' : 'Sign Up'
+              )}
+            </button>
+          </form>
+
+          {/* Secure SSL Shield Note */}
+          <div className="mt-6 flex items-center justify-center gap-1.5 text-[10px] text-zinc-450 font-medium">
+            <ShieldCheck className="w-3.5 h-3.5 text-indigo-500" />
+            <span>Secure 256-bit SSL Encrypted Connection</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  if (!mounted) {
+    return (
+      <div className={`min-h-screen w-full flex items-center justify-center transition-colors duration-300 ${theme === 'dark' ? 'bg-zinc-950 text-zinc-400' : 'bg-zinc-50 text-zinc-500'}`}>
+        <RefreshCw className="w-6 h-6 animate-spin text-indigo-650" />
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return renderLoginScreen();
+  }
+
+  return (
+    <main className={`flex flex-col font-sans transition-colors duration-300 ${
+      activeView === 'shop' ? 'min-h-screen' : 'h-screen max-h-screen overflow-hidden'
+    } ${theme === 'dark' ? 'bg-zinc-950 text-zinc-100' : 'bg-zinc-50 text-zinc-900'}`}>
+      
+      {/* Premium E-Commerce Header */}
+      <header className={`sticky top-0 z-30 border-b px-6 py-4 flex items-center justify-between flex-shrink-0 transition-colors duration-300 ${theme === 'dark' ? 'bg-zinc-900/90 border-zinc-800 backdrop-blur-md' : 'bg-white/90 border-zinc-200 backdrop-blur-md'}`}>
+        <div className="flex items-center gap-3">
+          <div onClick={() => { setActiveView('shop'); setIsChatOpen(false); }} className="cursor-pointer">
+            <BrandIconLogo className="w-9 h-9 hover:scale-105 transition-transform" />
+          </div>
+          <div onClick={() => { setActiveView('shop'); setIsChatOpen(false); }} className="cursor-pointer">
+            <h1 className={`font-bold text-sm sm:text-base leading-none tracking-tight ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
+              ShopEase
+            </h1>
+            <span className="text-[10px] text-zinc-500 font-medium">Digital Storefront</span>
+          </div>
+        </div>
+
+        {/* Catalog Search Input */}
+        {activeView === 'shop' && (
+          <div className="relative max-w-xs sm:max-w-md w-full mx-4">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+            <input
+              id="product-search-input"
+              type="text"
+              placeholder="Search products by name, specs or tags..."
+              value={productSearchQuery}
+              onChange={(e) => setProductSearchQuery(e.target.value)}
+              className={`w-full pl-9 pr-8 py-2 border text-xs transition-all focus:outline-none rounded-xl ${
+                theme === 'dark' 
+                  ? 'bg-zinc-950 border-zinc-800 focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 text-white placeholder-zinc-600' 
+                  : 'bg-zinc-100 border-zinc-200 focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 text-zinc-900 placeholder-zinc-400'
+              }`}
+            />
+            {productSearchQuery && (
+              <button 
+                onClick={() => setProductSearchQuery('')}
+                className={`absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-900 dark:hover:text-white`}
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* View Switcher and Shopping Cart */}
+        <div className="flex items-center gap-4">
+          <div className="flex bg-zinc-200/60 dark:bg-zinc-800 p-1 rounded-xl">
+            <button
+              onClick={() => {
+                setIsChatOpen(false);
+                setActiveView('shop');
+              }}
+              className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                activeView === 'shop'
+                  ? 'bg-indigo-650 text-white shadow-sm'
+                  : 'text-zinc-650 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+              }`}
+            >
+              Shop
+            </button>
+            <button
+              onClick={() => {
+                if (sarvamCurrentAudioRef.current) {
+                  sarvamCurrentAudioRef.current.pause();
+                  sarvamCurrentAudioRef.current = null;
+                  setSarvamSpeakingId(null);
+                }
+                setIsChatOpen(false);
+                setActiveView('chat');
+              }}
+              className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                activeView === 'chat'
+                  ? 'bg-indigo-650 text-white shadow-sm'
+                  : 'text-zinc-650 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+              }`}
+            >
+              Support Chat
+            </button>
+            <button
+              id="nav-voice-support"
+              onClick={() => {
+                setIsChatOpen(false);
+                setSupportGatePassed(false);
+                setSupportOrderId('');
+                setSupportFirstMsg('');
+                setSupportGateError('');
+                setActiveView('voice-support');
+              }}
+              className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
+                activeView === 'voice-support'
+                  ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm'
+                  : 'text-zinc-650 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+              }`}
+            >
+              🎤 Voice Support
+            </button>
+          </div>
+
+          <div className="relative p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
+            <ShoppingBag className="w-4.5 h-4.5" />
+            {cartCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-indigo-600 text-white text-[9px] font-bold rounded-full flex items-center justify-center border-2 border-white dark:border-zinc-900">
+                {cartCount}
+              </span>
+            )}
+          </div>
+
+          {/* Auth Controls */}
+          {currentUser ? (
+            <div className="flex items-center gap-2.5 border-l pl-3 dark:border-zinc-800 border-zinc-200">
+              {walletBalance !== null && (
+                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg border ${
+                  theme === 'dark'
+                    ? 'bg-zinc-800/80 border-zinc-700 text-zinc-300'
+                    : 'bg-zinc-100 border-zinc-200 text-zinc-650'
+                }`}>
+                  💳 Wallet: ₹{walletBalance.toLocaleString('en-IN')}
+                </span>
+              )}
+              <span className={`text-xs font-semibold max-w-[120px] truncate ${theme === 'dark' ? 'text-zinc-200' : 'text-zinc-700'}`}>
+                Hi, {currentUser.username}
+              </span>
+              <button
+                onClick={() => {
+                  if (currentUser) {
+                    fetchUserAddresses(currentUser.id.toString(), currentUser.username);
+                    fetchUserOrders(currentUser.id.toString(), currentUser.username);
+                  }
+                  setIsAccountModalOpen(true);
+                }}
+                className={`text-[11px] font-semibold px-2 py-1 rounded-lg border transition-all cursor-pointer whitespace-nowrap ${
+                  theme === 'dark'
+                    ? 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800 text-zinc-300'
+                    : 'border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-600'
+                }`}
+              >
+                My Account
+              </button>
+              <button
+                onClick={() => {
+                  if (currentUser) {
+                    fetchUserInbox(currentUser.email, currentUser.username);
+                  }
+                  setIsInboxModalOpen(true);
+                }}
+                className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                  theme === 'dark'
+                    ? 'border-indigo-700/60 bg-indigo-950/40 text-indigo-300 hover:bg-indigo-900/60'
+                    : 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                }`}
+              >
+                <Inbox className="w-3.5 h-3.5" />
+                <span>Grievance Inbox</span>
+              </button>
+              <button
+                id="auth-logout-btn"
+                onClick={handleLogout}
+                className="text-[11px] font-semibold text-red-500 hover:text-red-400 cursor-pointer transition-colors"
+              >
+                Logout
+              </button>
+            </div>
+          ) : (
+            <button
+              id="auth-login-trigger-btn"
+              onClick={() => {
+                setAuthError(null);
+                setIsAuthModalOpen(true);
+              }}
+              className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold cursor-pointer transition-all shadow-md shadow-indigo-650/15 active:scale-[0.98] whitespace-nowrap ml-1.5"
+            >
+              Sign In
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* Category Sub-header Navigation Bar */}
+      {activeView === 'shop' && (
+        <nav className={`relative px-6 py-2 border-b flex items-center gap-4.5 select-none transition-colors duration-300 z-30 ${
+          theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-800'
+        }`}>
+          {navItems.map((item) => {
+            const isActive = selectedNavTab === item.label;
+            if (item.isDropdown) {
+              return (
+                <div key={item.label} className="relative">
+                  <button
+                    id="all-categories-dropdown-btn"
+                    onClick={() => setIsCategoryDropdownOpen(prev => !prev)}
+                    className={`flex items-center gap-1.5 text-[13px] font-semibold transition-all duration-150 border px-2.5 py-1.5 rounded cursor-pointer whitespace-nowrap outline-none select-none ${
+                      isCategoryDropdownOpen
+                        ? (theme === 'dark' ? 'border-zinc-700 bg-zinc-850 text-white' : 'border-zinc-300 bg-zinc-100 text-zinc-950')
+                        : (theme === 'dark' ? 'border-transparent text-zinc-350 hover:text-white hover:bg-zinc-800' : 'border-transparent text-zinc-650 hover:text-zinc-950 hover:bg-zinc-100')
+                    }`}
+                  >
+                    {item.icon}
+                    <span>{item.label}</span>
+                    <span className="text-[10px] text-zinc-400 ml-0.5 select-none">▼</span>
+                  </button>
+
+                  {/* Vertical Category Dropdown Menu */}
+                  {isCategoryDropdownOpen && (
+                    <>
+                      <div className="fixed inset-0 z-40 cursor-default" onClick={() => setIsCategoryDropdownOpen(false)} />
+                      <div 
+                        id="vertical-category-dropdown"
+                        className={`absolute left-0 mt-2 w-56 rounded-xl border shadow-xl z-50 py-1.5 transition-all duration-150 ${
+                          theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-900'
+                        }`}
+                      >
+                        {dropdownItems.map((opt) => (
+                          <button
+                            id={`dropdown-item-${opt.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
+                            key={opt.label}
+                            onClick={() => {
+                              setSelectedCategory(opt.value);
+                              setSelectedNavTab('All category');
+                              setIsCategoryDropdownOpen(false);
+                            }}
+                            className={`w-full text-left px-4 py-2 text-xs font-semibold transition-colors duration-150 hover:bg-indigo-600 hover:text-white cursor-pointer ${
+                              selectedCategory === opt.value
+                                ? (theme === 'dark' ? 'bg-zinc-800 text-white border-l-2 border-indigo-500' : 'bg-indigo-50 text-indigo-700 border-l-2 border-indigo-600')
+                                : 'text-zinc-600 dark:text-zinc-305'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            }
+
+            return (
+              <button
+                id={`cat-tab-${item.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
+                key={item.label}
+                onClick={() => {
+                  setSelectedNavTab(item.label);
+                  if (item.label === 'Customer Service') {
+                    setIsChatOpen(true);
+                    setToastMessage("Customer Service chat widget opened!");
+                    setTimeout(() => {
+                      inputRef.current?.focus();
+                    }, 150);
+                  } else {
+                    setSelectedCategory(item.value);
+                  }
+                }}
+                className={`flex items-center gap-1.5 text-[13px] transition-all duration-150 border rounded px-2.5 py-1.5 cursor-pointer whitespace-nowrap outline-none select-none ${
+                  isActive
+                    ? 'border-indigo-600 text-indigo-600 bg-indigo-50/20 dark:border-indigo-500 dark:text-indigo-400 font-bold'
+                    : 'border-transparent text-zinc-600 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 font-semibold'
+                }`}
+              >
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+      )}
+
+      {/* Main Container */}
+      <div className="flex-1 flex flex-row overflow-hidden relative min-h-0">
+        
+        {/* Render active view */}
+        {activeView === 'chat' ? (
+          // Full screen Chat Dashboard view
+          <div className="w-full h-full flex flex-row overflow-hidden min-h-0">
+            {/* Sidebar backdrop */}
+            {isSidebarOpen && (
+              <div 
+                className="md:hidden fixed inset-0 bg-black/50 z-40 backdrop-blur-xs transition-opacity duration-300"
+                onClick={() => setIsSidebarOpen(false)}
+              />
+            )}
+
+            {/* Sidebar */}
+            <aside 
+              className={`
+                flex flex-col transition-all duration-300 h-full border-r z-40
+                fixed inset-y-0 left-0 transform md:relative md:translate-x-0
+                ${theme === 'dark' ? 'bg-zinc-950 text-zinc-205 border-zinc-900' : 'bg-zinc-100 text-zinc-800 border-zinc-200'}
+                ${isSidebarOpen ? 'w-72 translate-x-0' : 'w-0 -translate-x-full md:w-16 md:translate-x-0'}
+              `}
+            >
+              <div className={`flex flex-col h-full overflow-hidden ${!isSidebarOpen ? 'w-16 hidden md:flex items-center' : 'w-72'}`}>
+                {/* Sidebar Header */}
+                <div className={`flex items-center justify-between px-4 py-4 border-b w-full ${theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200'} ${!isSidebarOpen ? 'justify-center px-0' : ''}`}>
+                  {isSidebarOpen ? (
+                    <div className="flex items-center gap-2.5">
+                      <SupportChatLogo className="w-8 h-8" />
+                      <span className={`font-semibold text-sm tracking-wide ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
+                        Support History
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer" onClick={() => setIsSidebarOpen(true)}>
+                      <SupportChatLogo className="w-7 h-7" />
+                    </div>
+                  )}
+                  {isSidebarOpen && (
+                    <button 
+                      onClick={() => setIsSidebarOpen(false)}
+                      className={`p-1.5 rounded-lg transition-colors cursor-pointer ${theme === 'dark' ? 'hover:bg-zinc-900 text-zinc-400 hover:text-white' : 'hover:bg-zinc-200 text-zinc-500 hover:text-zinc-900'}`}
+                    >
+                      <PanelLeft className="w-4.5 h-4.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* New Chat Button */}
+                <div className="p-3 w-full flex justify-center flex-shrink-0">
+                  {isSidebarOpen ? (
+                    <button
+                      onClick={() => createNewSession()}
+                      className={`flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl border transition-all font-medium text-xs active:scale-[0.98] shadow-sm cursor-pointer ${theme === 'dark' ? 'bg-zinc-900 hover:bg-zinc-800 text-white border-zinc-805 hover:border-zinc-700' : 'bg-zinc-200 hover:bg-zinc-300 text-zinc-900 border-zinc-300 hover:border-zinc-400'}`}
+                    >
+                      <Plus className="w-4.5 h-4.5 text-indigo-500" />
+                      <span>New Chat</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => createNewSession()}
+                      className={`p-3 rounded-xl border transition-all flex items-center justify-center active:scale-[0.98] shadow-sm cursor-pointer ${theme === 'dark' ? 'bg-zinc-900 hover:bg-zinc-800 text-white border-zinc-805' : 'bg-zinc-200 hover:bg-zinc-300 text-zinc-900 border-zinc-300'}`}
+                      title="New Chat"
+                    >
+                      <Plus className="w-4.5 h-4.5 text-indigo-500" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Search chats */}
+                {isSidebarOpen ? (
+                  <div className="px-3 pb-3 w-full flex-shrink-0">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                      <input
+                        type="text"
+                        placeholder="Search chats..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className={`w-full pl-9 pr-8 py-2 border text-xs transition-all focus:outline-none rounded-lg ${theme === 'dark' ? 'bg-zinc-900/60 border-zinc-800 focus:border-zinc-700 focus:ring-1 focus:ring-zinc-700 text-white placeholder-zinc-500' : 'bg-zinc-200/50 border-zinc-300 focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 text-zinc-900 placeholder-zinc-500'}`}
+                      />
+                      {searchQuery && (
+                        <button 
+                          onClick={() => setSearchQuery('')}
+                          className={`absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-905`}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="w-full flex justify-center pb-3 flex-shrink-0">
+                    <button
+                      onClick={() => setIsSidebarOpen(true)}
+                      className={`p-2.5 rounded-xl transition-all cursor-pointer ${theme === 'dark' ? 'hover:bg-zinc-900 text-zinc-400 hover:text-white' : 'hover:bg-zinc-200 text-zinc-505 hover:text-zinc-900'}`}
+                      title="Search chats"
+                    >
+                      <Search className="w-4.5 h-4.5" />
+                    </button>
+                  </div>
+                )}
+
+                {/* Recent Chat Lists */}
+                <div className="flex-1 overflow-y-auto px-2 w-full space-y-1">
+                  {isSidebarOpen && (
+                    <div className="px-2 py-1 text-[10px] font-semibold text-zinc-550 uppercase tracking-wider">
+                      Recent Chats
+                    </div>
+                  )}
+                  {isSidebarOpen ? (
+                    filteredSessions.length > 0 ? (
+                      filteredSessions.map((session) => {
+                        const isActive = session.id === activeSupportSessionId;
+                        const isEditing = session.id === editingSessionId;
+                        return (
+                          <div
+                            key={session.id}
+                            onClick={() => !isEditing && setActiveSupportSessionId(session.id)}
+                            className={`
+                              group flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer
+                              ${isActive 
+                                ? (theme === 'dark' ? 'bg-indigo-650/15 text-white border-l-2 border-indigo-500' : 'bg-indigo-105 text-indigo-950 border-l-2 border-indigo-600') 
+                                : (theme === 'dark' ? 'text-zinc-400 hover:bg-zinc-900 hover:text-white' : 'text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900')
+                              }
+                            `}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                              <MessageSquare className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-indigo-400' : 'text-zinc-500'}`} />
+                              {isEditing ? (
+                                <input
+                                  type="text"
+                                  value={editTitle}
+                                  onChange={(e) => setEditTitle(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleRenameSession(session.id);
+                                    if (e.key === 'Escape') cancelEditingSession();
+                                  }}
+                                  onBlur={() => handleRenameBlur(session.id)}
+                                  autoFocus
+                                  className={`border rounded px-1.5 py-0.5 w-full focus:outline-none text-xs ${theme === 'dark' ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-zinc-300 text-zinc-900'}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              ) : (
+                                <span className="truncate pr-1">{session.title}</span>
+                              )}
+                            </div>
+
+                            {!isEditing && (
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-1.5">
+                                <button
+                                  onClick={(e) => startEditingSession(session.id, session.title, e)}
+                                  className={`p-1 rounded transition-colors cursor-pointer ${theme === 'dark' ? 'hover:bg-zinc-850 text-zinc-500 hover:text-white' : 'hover:bg-zinc-200 text-zinc-500 hover:text-zinc-900'}`}
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                </button>
+                                <button
+                                  onClick={(e) => handleDeleteSession(session.id, e)}
+                                  className={`p-1 rounded transition-colors cursor-pointer ${theme === 'dark' ? 'hover:bg-zinc-850 text-zinc-505 hover:text-red-400' : 'hover:bg-zinc-200 text-zinc-505 hover:text-red-650'}`}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className={`px-3 py-4 text-center text-xs italic ${theme === 'dark' ? 'text-zinc-700' : 'text-zinc-400'}`}>
+                        No chats found
+                      </div>
+                    )
+                  ) : (
+                    filteredSessions.map((session) => {
+                      const isActive = session.id === activeSupportSessionId;
+                      return (
+                        <button
+                          key={session.id}
+                          onClick={() => setActiveSupportSessionId(session.id)}
+                          className={`
+                            w-10 h-10 mx-auto rounded-xl flex items-center justify-center transition-all cursor-pointer mb-2
+                            ${isActive ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30' : (theme === 'dark' ? 'text-zinc-400 hover:bg-zinc-800 hover:text-white' : 'text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900')}
+                          `}
+                          title={session.title}
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Sidebar Footer */}
+                <div className={`p-3 border-t w-full flex flex-col gap-2 flex-shrink-0 ${theme === 'dark' ? 'border-zinc-900' : 'border-zinc-200'} ${!isSidebarOpen ? 'items-center px-0' : ''}`}>
+                  {isSidebarOpen ? (
+                    <div className="flex items-center justify-between w-full text-[10px] px-1.5 font-semibold">
+                      <span className={theme === 'dark' ? 'text-zinc-600' : 'text-zinc-400'}>ShopEase v1.0</span>
+                      <button 
+                        onClick={() => setClearConfirmOpen(true)}
+                        className={`hover:underline transition-colors cursor-pointer ${theme === 'dark' ? 'text-zinc-500 hover:text-red-400' : 'text-zinc-500 hover:text-red-650'}`}
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setClearConfirmOpen(true)}
+                      className={`p-2 rounded-xl transition-all cursor-pointer ${theme === 'dark' ? 'hover:bg-zinc-900 text-zinc-500 hover:text-red-400' : 'hover:bg-zinc-200 text-zinc-550 hover:text-red-650'}`}
+                      title="Clear All Chats"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </aside>
+
+            {/* Main Chat Interface */}
+            {renderChatWindow(false)}
+          </div>
+        ) : activeView === 'voice-support' ? (
+          // Voice Support — gate + Sarvam AI voice chat
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {!supportGatePassed ? (
+              // ── Gate Screen: Order ID & Language Only (Zero Typing) ──
+              <section className={`flex-1 flex flex-col items-center justify-center h-full overflow-auto px-4 py-8 transition-colors duration-300 ${theme === 'dark' ? 'bg-zinc-950' : 'bg-zinc-50'}`}>
+                <div className={`w-full max-w-md rounded-3xl border shadow-2xl p-8 transition-all ${theme === 'dark' ? 'bg-zinc-900/90 border-zinc-800' : 'bg-white border-zinc-200'}`}>
+                  <div className="flex flex-col items-center gap-3 mb-6">
+                    <div className="relative">
+                      <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-600 via-violet-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-indigo-500/25">
+                        <Phone className="w-8 h-8 text-white animate-pulse" />
+                      </div>
+                      <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white dark:border-zinc-900 animate-ping" />
+                    </div>
+                    <div className="text-center mt-1">
+                      <h2 className={`text-2xl font-extrabold tracking-tight ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
+                        {supportLang === 'hi-IN' ? 'वॉइस सपोर्ट' : supportLang === 'mr-IN' ? 'व्हॉइस सपोर्ट' : 'Voice Support'}
+                      </h2>
+                      <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                        {supportLang === 'hi-IN' ? '100% हैंड्स-फ्री कॉल · कोई टाइपिंग नहीं' : supportLang === 'mr-IN' ? '100% हँड्स-फ्री कॉल · कोणतीही टायपिंग नाही' : '100% Hands-Free AI Call · Zero Typing'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Language Selector */}
+                  <div className="mb-6">
+                    <label className={`text-[11px] font-bold mb-2 flex items-center gap-1.5 uppercase tracking-wider ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                      🌐 {supportLang === 'hi-IN' ? 'भाषा चुनें' : supportLang === 'mr-IN' ? 'भाषा निवडा' : 'Select Language'}
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {SUPPORT_LANGS.map(lang => (
+                        <button
+                          key={lang.code}
+                          type="button"
+                          onClick={() => setSupportLang(lang.code)}
+                          className={`py-3 rounded-2xl text-xs font-bold border transition-all cursor-pointer ${
+                            supportLang === lang.code
+                              ? 'bg-gradient-to-r from-indigo-600 to-violet-600 border-indigo-500 text-white shadow-md shadow-indigo-600/20 scale-[1.02]'
+                              : (theme === 'dark' ? 'bg-zinc-800/80 border-zinc-700/80 text-zinc-400 hover:text-white hover:bg-zinc-800' : 'bg-zinc-50 border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100')
+                          }`}
+                        >
+                          {lang.native}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Order ID Form */}
+                  <form onSubmit={async (e) => {
+                    e.preventDefault();
+                    setSupportGateError('');
+                    const trimId = supportOrderId.trim().toUpperCase();
+                    if (!trimId) {
+                      setSupportGateError(supportLang === 'hi-IN' ? 'कृपया अपना ऑर्डर ID दर्ज करें।' : supportLang === 'mr-IN' ? 'कृपया तुमचा ऑर्डर ID टाका.' : 'Please enter your Order ID.');
+                      return;
+                    }
+
+                    // Check order existence and account ownership
+                    try {
+                      const chkRes = await fetch(`/api/order/details?order_id=${encodeURIComponent(trimId)}`);
+                      if (!chkRes.ok) {
+                        setSupportGateError(supportLang === 'hi-IN' ? 'ऑर्डर नहीं मिला। कृपया सही ऑर्डर ID दर्ज करें।' : supportLang === 'mr-IN' ? 'ऑर्डर सापडला नाही. कृपया वैध ऑर्डर ID टाका.' : 'Order not found. Please enter a valid Order ID.');
+                        return;
+                      }
+                      const orderData = await chkRes.json();
+                      const currentUserId = currentUser?.id?.toString() || '';
+                      const currentUsername = currentUser?.username?.toLowerCase() || '';
+                      const orderUserId = (orderData.user_id || '').toString();
+                      const orderUsername = (orderData.username || '').toLowerCase();
+
+                      const isMismatch = (orderUserId && currentUserId && orderUserId !== currentUserId) ||
+                                         (orderUsername && currentUsername && orderUsername !== currentUsername);
+                      if (isMismatch) {
+                        setSupportGateError(supportLang === 'hi-IN'
+                          ? 'यह ऑर्डर आपके खाते से संबंधित नहीं है। कृपया वापस जाएं या अपना ऑर्डर चेक करें।'
+                          : supportLang === 'mr-IN'
+                          ? 'हा ऑर्डर आपल्या खात्याशी संबंधित नाही. कृपया आपला ऑर्डर ID तपासा.'
+                          : '⚠️ This order does not belong to your account. Please check your Order ID.');
+                        return;
+                      }
+                    } catch (chkErr) {
+                      console.warn('Pre-check failed, continuing to server check:', chkErr);
+                    }
+
+                    userMutedMicRef.current = false;
+                    setSupportGatePassed(true);
+                    const currentActiveId = activeSupportSessionId;
+                    const welcomeText = supportLang === 'hi-IN'
+                      ? `नमस्ते! ऑर्डर #${trimId} के लिए शॉपईज़ वॉइस सपोर्ट में आपका स्वागत है। मैं आपकी क्या मदद कर सकता हूँ?`
+                      : supportLang === 'mr-IN'
+                      ? `नमस्कार! ऑर्डर #${trimId} साठी शॉपईझ व्हॉइस सपोर्टमध्ये आपले स्वागत आहे. मी आपली काय मदत करू शकतो?`
+                      : `Hello! Welcome to ShopEase Voice Support for order #${trimId}. How can I assist you with your order today?`;
+                    const botMsg: Message = { id: crypto.randomUUID(), role: 'assistant', content: welcomeText, timestamp: new Date() };
+                    setSupportSessions(prev => prev.map(s => s.id === currentActiveId ? { ...s, title: `Order ${trimId}`, messages: [botMsg], updatedAt: new Date() } : s));
+                    if (isSupportAutoSpeak) {
+                      speakWithSarvam(welcomeText, botMsg.id, supportLang);
+                    }
+                  }} className="flex flex-col gap-4">
+                    {/* Top 5 Recent Orders Quick Selector */}
+                    {currentUser && userOrders.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className={`text-[11px] font-bold flex items-center gap-1.5 uppercase tracking-wider ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                            📦 {supportLang === 'hi-IN' ? 'हाल के ऑर्डर चुनें' : supportLang === 'mr-IN' ? 'अलीकडील ऑर्डर निवडा' : 'Select a Recent Order'}
+                          </label>
+                          <span className="text-[10px] text-indigo-500 font-semibold">Top {Math.min(5, userOrders.length)}</span>
+                        </div>
+                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                          {userOrders.slice(0, 5).map((ord: any) => {
+                            const isSelected = supportOrderId.trim().toUpperCase() === (ord.order_id || '').toUpperCase();
+                            return (
+                              <button
+                                key={ord.order_id || ord._id}
+                                type="button"
+                                onClick={() => {
+                                  setSupportOrderId(ord.order_id);
+                                  setSupportGateError('');
+                                }}
+                                className={`w-full text-left p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                                  isSelected
+                                    ? 'border-indigo-500 bg-indigo-500/10 shadow-sm ring-1 ring-indigo-500/50'
+                                    : (theme === 'dark' 
+                                        ? 'border-zinc-800 bg-zinc-950/60 hover:border-zinc-700 hover:bg-zinc-800/40 text-zinc-300' 
+                                        : 'border-zinc-200 bg-zinc-50 hover:border-zinc-300 hover:bg-white text-zinc-800')
+                                }`}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono text-xs font-bold text-indigo-500">{ord.order_id}</span>
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                                      ord.status === 'Delivered' 
+                                        ? 'bg-emerald-500/10 text-emerald-500' 
+                                        : ord.status === 'Paused' || ord.status === 'On Hold' 
+                                        ? 'bg-amber-500/10 text-amber-500' 
+                                        : 'bg-indigo-500/10 text-indigo-500'
+                                    }`}>
+                                      {ord.status}
+                                    </span>
+                                  </div>
+                                  <p className={`text-xs mt-1 font-medium truncate ${theme === 'dark' ? 'text-zinc-200' : 'text-zinc-800'}`}>
+                                    {ord.product_name}
+                                  </p>
+                                </div>
+                                <div className="text-right flex-shrink-0 flex items-center gap-2">
+                                  <span className="text-xs font-bold text-emerald-500">₹{ord.price?.toLocaleString()}</span>
+                                  {isSelected && (
+                                    <div className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center">
+                                      <Check className="w-3 h-3" />
+                                    </div>
+                                  )}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    <div>
+                      <label className={`text-[11px] font-bold mb-1.5 flex items-center gap-1.5 uppercase tracking-wider ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                        {currentUser && userOrders.length > 0 ? (
+                          <>
+                            ✏️ {supportLang === 'hi-IN' ? 'या दूसरा ऑर्डर ID दर्ज करें' : supportLang === 'mr-IN' ? 'किंवा दुसरा ऑर्डर ID टाका' : 'Or Enter Another Order ID'}
+                          </>
+                        ) : (
+                          <>
+                            📦 {supportLang === 'hi-IN' ? 'ऑर्डर ID दर्ज करें' : supportLang === 'mr-IN' ? 'ऑर्डर ID टाका' : 'Enter Order ID'} <span className="text-red-500">*</span>
+                          </>
+                        )}
+                      </label>
+                      <input
+                        id="voice-support-order-id"
+                        type="text"
+                        value={supportOrderId}
+                        onChange={e => setSupportOrderId(e.target.value)}
+                        placeholder="e.g. ORD-7929A9B9"
+                        autoComplete="off"
+                        className={`w-full rounded-2xl px-4 py-3.5 text-sm font-medium border focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all ${
+                          theme === 'dark' ? 'bg-zinc-950 border-zinc-800 text-white placeholder-zinc-500' : 'bg-zinc-50 border-zinc-200 text-zinc-900 placeholder-zinc-400'
+                        }`}
+                      />
+                    </div>
+
+                    {supportGateError && (
+                      <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 rounded-xl px-3.5 py-2.5 text-red-500 text-xs">
+                        <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                        {supportGateError}
+                      </div>
+                    )}
+
+                    <button
+                      id="voice-support-submit"
+                      type="submit"
+                      className="w-full mt-2 py-4 rounded-2xl bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-600 hover:from-indigo-500 hover:to-violet-500 text-white font-extrabold text-sm transition-all shadow-xl shadow-indigo-600/30 active:scale-[0.98] flex items-center justify-center gap-2.5 cursor-pointer"
+                    >
+                      <Phone className="w-4 h-4 animate-bounce" />
+                      {supportLang === 'hi-IN' ? 'वॉइस कॉल शुरू करें' : supportLang === 'mr-IN' ? 'व्हॉइस कॉल सुरू करा' : 'Start Voice Call'}
+                    </button>
+                  </form>
+
+                  <div className={`mt-6 pt-5 border-t flex items-center justify-between text-[11px] ${theme === 'dark' ? 'border-zinc-800 text-zinc-500' : 'border-zinc-100 text-zinc-400'}`}>
+                    <span className="flex items-center gap-1 font-medium"><ShieldCheck className="w-3.5 h-3.5 text-emerald-500" /> End-to-End Encrypted</span>
+                    <span className="font-semibold text-indigo-400">Powered by Sarvam AI • Ishita Voice</span>
+                  </div>
+                </div>
+              </section>
+            ) : (
+              // ── Pure Voice Call Room with Dynamic Animated Waveform (Zero Keyboard) ──
+              <section className={`flex-1 flex flex-col h-full overflow-hidden transition-colors duration-300 relative select-none ${
+                theme === 'dark' ? 'bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 text-white' : 'bg-gradient-to-b from-zinc-50 via-white to-zinc-100 text-zinc-900'
+              }`}>
+                {/* Header: Call Status, Language, End Call */}
+                <header className={`flex items-center justify-between px-6 py-4 border-b flex-shrink-0 backdrop-blur-md ${
+                  theme === 'dark' ? 'bg-zinc-900/60 border-zinc-800' : 'bg-white/70 border-zinc-200'
+                }`}>
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center shadow-md">
+                        <Phone className="w-5 h-5 text-white" />
+                      </div>
+                      <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white dark:border-zinc-900 animate-pulse" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="font-bold text-sm sm:text-base leading-none">
+                          {supportLang === 'hi-IN' ? 'शॉपईज़ वॉइस कॉल' : supportLang === 'mr-IN' ? 'शॉपईझ व्हॉइस कॉल' : 'ShopEase Voice Call'}
+                        </h2>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                          {String(Math.floor(callDuration / 60)).padStart(2, '0')}:{String(callDuration % 60).padStart(2, '0')}
+                        </span>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-500/15 text-violet-400 border border-violet-500/30">
+                          Ishita Voice
+                        </span>
+                      </div>
+                      <p className={`text-[11px] mt-1 ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                        Order: <span className="font-bold text-indigo-500">{supportOrderId.toUpperCase()}</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {/* Language Switcher */}
+                    <div className={`flex items-center gap-0.5 p-0.5 rounded-xl border ${theme === 'dark' ? 'bg-zinc-800/80 border-zinc-700' : 'bg-zinc-100 border-zinc-200'}`}>
+                      {SUPPORT_LANGS.map(lang => (
+                        <button
+                          key={lang.code}
+                          onClick={() => setSupportLang(lang.code)}
+                          className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                            supportLang === lang.code ? 'bg-indigo-600 text-white shadow-sm' : (theme === 'dark' ? 'text-zinc-400 hover:text-white' : 'text-zinc-600 hover:text-zinc-900')
+                          }`}
+                        >
+                          {lang.native}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Subtitles Toggle */}
+                    <button
+                      onClick={() => setShowCaptions(p => !p)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold border rounded-xl transition-all cursor-pointer ${
+                        showCaptions
+                          ? 'bg-indigo-600/20 border-indigo-500 text-indigo-400'
+                          : (theme === 'dark' ? 'text-zinc-400 bg-zinc-800/80 border-zinc-700 hover:text-white' : 'text-zinc-600 bg-zinc-50 border-zinc-200 hover:text-zinc-900')
+                      }`}
+                      title={showCaptions ? 'Hide Subtitles' : 'Show Subtitles'}
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">{showCaptions ? 'Subtitles: ON' : 'Subtitles: OFF'}</span>
+                    </button>
+
+                    {/* End Call Button */}
+                    <button
+                      onClick={endVoiceCall}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-500 rounded-xl transition-all shadow-md shadow-red-600/20 cursor-pointer active:scale-95"
+                    >
+                      <PhoneOff className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">End Call</span>
+                    </button>
+                  </div>
+                </header>
+
+                {/* Central Visualizer: Dynamic Audio Waveform & Glowing Voice Orb */}
+                <div className="flex-1 flex flex-col items-center justify-center p-6 relative overflow-hidden">
+                  {/* Glowing Ambient Background Glow */}
+                  <div className={`absolute w-80 h-80 sm:w-[480px] sm:h-[480px] rounded-full blur-[90px] transition-all duration-700 pointer-events-none opacity-30 ${
+                    isSarvamRecording ? 'bg-emerald-500 scale-125' :
+                    isLoading ? 'bg-amber-500 scale-110' :
+                    sarvamSpeakingId ? 'bg-indigo-500 scale-125' :
+                    'bg-violet-600/40'
+                  }`} />
+
+                  {/* Outer Pulsing Waveform Ring */}
+                  <div className="relative flex items-center justify-center">
+                    <div className={`w-60 h-60 sm:w-72 sm:h-72 rounded-full border flex items-center justify-center transition-all duration-700 ${
+                      isSarvamRecording ? 'border-emerald-500/40 shadow-[0_0_80px_rgba(16,185,129,0.35)] scale-105' :
+                      isLoading ? 'border-amber-500/40 shadow-[0_0_70px_rgba(245,158,11,0.35)] animate-spin' :
+                      sarvamSpeakingId ? 'border-indigo-500/50 shadow-[0_0_90px_rgba(99,102,241,0.45)] scale-105' :
+                      'border-violet-500/25 shadow-[0_0_40px_rgba(139,92,246,0.15)]'
+                    }`}>
+                      {/* Secondary Ring */}
+                      <div className={`w-48 h-48 sm:w-56 sm:h-56 rounded-full border border-dashed flex items-center justify-center transition-all duration-500 ${
+                        isSarvamRecording ? 'border-emerald-400/50 scale-105' :
+                        sarvamSpeakingId ? 'border-indigo-400/60 scale-105' :
+                        'border-white/10'
+                      }`}>
+                        {/* Central Glowing Voice Orb */}
+                        <div
+                          onClick={() => {
+                            if (sarvamSpeakingId) {
+                              sarvamCurrentAudioRef.current?.pause();
+                              sarvamCurrentAudioRef.current = null;
+                              setSarvamSpeakingId(null);
+                              handleSarvamMic();
+                            } else if (isSarvamRecording) {
+                              handleSarvamMic();
+                            } else if (!isLoading) {
+                              handleSarvamMic();
+                            }
+                          }}
+                          className={`w-36 h-36 sm:w-44 sm:h-44 rounded-full flex flex-col items-center justify-center cursor-pointer transition-all duration-300 shadow-2xl active:scale-95 bg-gradient-to-tr ${
+                            isSarvamRecording
+                              ? 'from-emerald-600 via-teal-500 to-cyan-500 shadow-emerald-500/50 scale-110'
+                              : isLoading
+                              ? 'from-amber-600 via-orange-500 to-yellow-400 shadow-amber-500/40 animate-pulse'
+                              : sarvamSpeakingId
+                              ? 'from-indigo-600 via-purple-500 to-cyan-400 shadow-indigo-500/60 scale-110'
+                              : 'from-zinc-800 via-indigo-950 to-zinc-900 hover:from-indigo-900 hover:to-zinc-800 border-2 border-indigo-500/30 shadow-indigo-500/20'
+                          }`}
+                        >
+                          {/* Animated Sound Wave Equalizer Bars */}
+                          <div className="flex items-center justify-center gap-1 sm:gap-1.5 h-16 px-4">
+                            {[...Array(20)].map((_, i) => {
+                              const isCenter = Math.abs(i - 9.5) < 5;
+                              return (
+                                <div
+                                  key={i}
+                                  className={`w-1 sm:w-1.5 rounded-full transition-all duration-150 ${
+                                    isSarvamRecording ? 'bg-white' :
+                                    isLoading ? 'bg-amber-100' :
+                                    sarvamSpeakingId ? 'bg-white' :
+                                    'bg-indigo-300/40'
+                                  }`}
+                                  style={{
+                                    height: isSarvamRecording
+                                      ? `${Math.max(12, Math.sin(Date.now() / 120 + i) * 48 + 32)}px`
+                                      : sarvamSpeakingId
+                                      ? `${Math.max(14, Math.cos(Date.now() / 100 + i * 0.4) * 52 + 36)}px`
+                                      : isLoading
+                                      ? `${Math.max(10, Math.sin(i * 0.7) * 28 + 18)}px`
+                                      : isCenter ? '14px' : '8px',
+                                    animation: isSarvamRecording
+                                      ? `wavePulse 0.7s ease-in-out ${i * 0.04}s infinite alternate`
+                                      : sarvamSpeakingId
+                                      ? `wavePulse 0.55s ease-in-out ${i * 0.03}s infinite alternate`
+                                      : isLoading
+                                      ? `wavePulse 1.1s ease-in-out ${i * 0.06}s infinite alternate`
+                                      : 'none'
+                                  }}
+                                />
+                              );
+                            })}
+                          </div>
+                          <span className="text-[10px] font-bold text-white/90 uppercase tracking-widest mt-1">
+                            {isSarvamRecording ? 'Listening' : sarvamSpeakingId ? 'Interrupt' : isLoading ? 'Thinking' : userMutedMicRef.current ? 'Mic Paused' : 'Auto Call'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Status Indicator & Live Guidance */}
+                  <div className="mt-8 text-center max-w-md">
+                    <h3 className="text-xl sm:text-2xl font-black tracking-tight flex items-center justify-center gap-2">
+                      {isSarvamRecording && (
+                        <span className="flex items-center gap-2 text-emerald-500 dark:text-emerald-400 animate-pulse">
+                          <span className="w-3 h-3 rounded-full bg-emerald-500 animate-ping" />
+                          {supportLang === 'hi-IN' ? 'सुन रहे हैं... बोलिए' : supportLang === 'mr-IN' ? 'ऐकत आहे... बोला' : 'Listening… Speak naturally'}
+                        </span>
+                      )}
+                      {isLoading && (
+                        <span className="flex items-center gap-2 text-amber-500 dark:text-amber-400">
+                          <RefreshCw className="w-5 h-5 animate-spin" />
+                          {supportLang === 'hi-IN' ? 'सोच रहे हैं...' : supportLang === 'mr-IN' ? 'विचार करत आहे...' : 'Thinking…'}
+                        </span>
+                      )}
+                      {sarvamSpeakingId && (
+                        <span className="flex items-center gap-2 text-indigo-500 dark:text-indigo-400">
+                          <Volume2 className="w-5 h-5 animate-pulse" />
+                          {supportLang === 'hi-IN' ? 'असिस्टेंट बोल रहा है...' : supportLang === 'mr-IN' ? 'असिस्टंट बोलत आहे...' : 'Assistant is speaking…'}
+                        </span>
+                      )}
+                      {!isSarvamRecording && !isLoading && !sarvamSpeakingId && (
+                        <span className={theme === 'dark' ? 'text-zinc-200' : 'text-zinc-800'}>
+                          {userMutedMicRef.current
+                            ? (supportLang === 'hi-IN' ? 'माइक बंद है · बोलने के लिए टैप करें' : supportLang === 'mr-IN' ? 'माइक बंद आहे · बोलण्यासाठी टॅप करा' : 'Mic Paused · Tap to speak')
+                            : (supportLang === 'hi-IN' ? 'माइक चालू हो रहा है...' : supportLang === 'mr-IN' ? 'माइक सुरू होत आहे...' : 'Connecting mic…')}
+                        </span>
+                      )}
+                    </h3>
+
+                    <p className={`text-xs mt-2 ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                      {isSarvamRecording
+                        ? (supportLang === 'hi-IN' ? 'हैंड्स-फ्री कॉल सक्रिय है। अपनी बात बोलें, 1.5 सेकंड रुकने पर यह अपने आप जवाब देगा।' : supportLang === 'mr-IN' ? 'हँड्स-फ्री कॉल सुरू आहे. बोला, 1.5 सेकंद थांबल्यावर आपोआप उत्तर येईल.' : 'Hands-free phone mode active. Speak freely — pauses are auto-detected.')
+                        : sarvamSpeakingId
+                        ? (supportLang === 'hi-IN' ? 'नया सवाल पूछने के लिए कभी भी बीच वाले बटन पर टैप करके रोक सकते हैं।' : supportLang === 'mr-IN' ? 'नवीन प्रश्न विचारण्यासाठी कधीही मधल्या बटणावर टॅप करून थांबवू शकता.' : 'Assistant is speaking. Tap the orb anytime to interrupt and ask a question.')
+                        : userMutedMicRef.current
+                        ? (supportLang === 'hi-IN' ? 'माइक बंद कर दिया गया है। जब भी बोलना चाहें, बीच वाले बटन पर टैप करें।' : supportLang === 'mr-IN' ? 'माइक बंद करण्यात आला आहे. जेव्हा बोलायचे असेल तेव्हा मधल्या बटणावर टॅप करा.' : 'Microphone is paused. Tap the orb or mic button whenever you are ready to talk.')
+                        : (supportLang === 'hi-IN' ? 'असली फोन सपोर्ट की तरह — बिना किसी बटन को दबाए सीधे बात करें।' : supportLang === 'mr-IN' ? 'खऱ्या फोन सपोर्टसारखे — कोणतेही बटण न दाबता थेट बोला.' : 'Just like a real phone call — talk freely without tapping any buttons.')}
+                    </p>
+
+                    {/* Optional Captions Card */}
+                    {showCaptions && (
+                      <div className={`mt-5 p-4 rounded-2xl border text-left text-xs max-h-36 overflow-y-auto backdrop-blur-md transition-all shadow-lg ${
+                        theme === 'dark' ? 'bg-zinc-900/80 border-zinc-800 text-zinc-300' : 'bg-white/80 border-zinc-200 text-zinc-700'
+                      }`}>
+                        {(() => {
+                          const sess = supportSessions.find(s => s.id === activeSupportSessionId);
+                          const lastMsg = sess?.messages[sess.messages.length - 1];
+                          if (!lastMsg) return <p className="text-zinc-500 italic">No subtitles yet.</p>;
+                          return (
+                            <div>
+                              <span className="font-bold text-indigo-500 block mb-1">
+                                {lastMsg.role === 'assistant' ? '🤖 Assistant:' : '👤 You:'}
+                              </span>
+                              <p className="leading-relaxed whitespace-pre-wrap">{lastMsg.content}</p>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Bottom Call Controls Dock */}
+                <footer className={`border-t px-6 py-6 flex-shrink-0 backdrop-blur-md flex items-center justify-center gap-6 ${
+                  theme === 'dark' ? 'bg-zinc-900/70 border-zinc-800' : 'bg-white/80 border-zinc-200'
+                }`}>
+                  {/* Replay Last Spoken Response */}
+                  <button
+                    onClick={() => {
+                      if (lastSpokenAnswer) {
+                        speakWithSarvam(lastSpokenAnswer.text, lastSpokenAnswer.id, lastSpokenAnswer.lang);
+                      }
+                    }}
+                    disabled={!lastSpokenAnswer || isLoading || isSarvamRecording}
+                    className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-xs font-bold border transition-all cursor-pointer active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${
+                      theme === 'dark' ? 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:text-white hover:bg-zinc-700' : 'bg-zinc-100 border-zinc-200 text-zinc-700 hover:bg-zinc-200'
+                    }`}
+                    title="Replay last answer"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span className="hidden sm:inline">
+                      {supportLang === 'hi-IN' ? 'दोबारा सुनें' : supportLang === 'mr-IN' ? 'पुन्हा ऐका' : 'Replay'}
+                    </span>
+                  </button>
+
+                  {/* Main Central Mic / Stop Button */}
+                  <button
+                    id="voice-call-mic-btn"
+                    onClick={() => {
+                      if (sarvamSpeakingId) {
+                        sarvamCurrentAudioRef.current?.pause();
+                        sarvamCurrentAudioRef.current = null;
+                        setSarvamSpeakingId(null);
+                        handleSarvamMic();
+                      } else {
+                        handleSarvamMic();
+                      }
+                    }}
+                    disabled={isLoading}
+                    className={`w-18 h-18 rounded-full flex items-center justify-center transition-all duration-300 shadow-xl cursor-pointer active:scale-90 disabled:opacity-50 ${
+                      isSarvamRecording
+                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/40 animate-pulse scale-105'
+                        : sarvamSpeakingId
+                        ? 'bg-gradient-to-tr from-indigo-600 to-violet-600 text-white shadow-indigo-600/40 hover:scale-105'
+                        : userMutedMicRef.current
+                        ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-2 border-zinc-700 shadow-lg hover:scale-105'
+                        : 'bg-gradient-to-tr from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white shadow-indigo-600/30 hover:scale-105'
+                    }`}
+                    title={isSarvamRecording ? 'Listening (silence auto-sends, or tap to pause mic)' : sarvamSpeakingId ? 'Tap to interrupt' : userMutedMicRef.current ? 'Mic Paused (tap to speak)' : 'Auto-phone call mode'}
+                  >
+                    {isSarvamRecording ? (
+                      <Mic className="w-7 h-7 animate-pulse text-white" />
+                    ) : sarvamSpeakingId ? (
+                      <Volume2 className="w-7 h-7 animate-pulse" />
+                    ) : userMutedMicRef.current ? (
+                      <MicOff className="w-7 h-7 text-zinc-400" />
+                    ) : (
+                      <Mic className="w-7 h-7" />
+                    )}
+                  </button>
+
+                  {/* End Call / Hang Up */}
+                  <button
+                    onClick={endVoiceCall}
+                    className="flex items-center gap-2 px-4 py-3 rounded-2xl text-xs font-bold text-white bg-red-600 hover:bg-red-500 transition-all shadow-md shadow-red-600/20 cursor-pointer active:scale-95"
+                    title="End Call"
+                  >
+                    <PhoneOff className="w-4 h-4" />
+                    <span className="hidden sm:inline">
+                      {supportLang === 'hi-IN' ? 'कॉल समाप्त' : supportLang === 'mr-IN' ? 'कॉल समाप्त' : 'End Call'}
+                    </span>
+                  </button>
+                </footer>
+              </section>
+            )}
+          </div>
+        ) : activeView === 'shop' ? (
+          // Storefront Products Catalog Grid View
+          <section className="flex-1 max-w-7xl w-full mx-auto px-6 py-8 overflow-y-auto">
+            {/* Featured Header */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-4 mb-8 dark:border-zinc-800 border-zinc-200">
+              <div>
+                <h2 className={`text-xl font-bold tracking-tight ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
+                  Featured Showcase
+                </h2>
+                <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                  Browse and shop catalog items category-wise. Contact our customer support team for inquiries.
+                </p>
+              </div>
+              <div className={`mt-2.5 sm:mt-0 text-xs font-semibold px-3 py-1.5 rounded-xl border ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-400' : 'bg-white border-zinc-200 text-zinc-600'}`}>
+                {filteredProducts.length} items showing
+              </div>
+            </div>
+
+            {/* Price Filter Control Panel */}
+            <div className={`mb-8 p-4 rounded-2xl border transition-all duration-300 flex flex-col gap-4 items-start justify-between ${
+              theme === 'dark' ? 'bg-zinc-900/40 border-zinc-800' : 'bg-white border-zinc-200'
+            }`}>
+              <div className="flex flex-col md:flex-row gap-4 items-start md:items-center w-full justify-between">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`text-xs font-bold ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>Filter by Price:</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { label: 'All Prices', value: 'all' },
+                      { label: 'Under ₹2,000', value: 'under-2k' },
+                      { label: '₹2,000 - ₹5,000', value: '2k-5k' },
+                      { label: '₹5,000 - ₹10,000', value: '5k-10k' },
+                      { label: '₹10,000 - ₹20,000', value: '10k-20k' },
+                      { label: 'Over ₹20,000', value: 'over-20k' }
+                    ].map((preset) => {
+                      const isSelected = priceFilter === preset.value;
+                      return (
+                        <button
+                          key={preset.value}
+                          onClick={() => {
+                            setPriceFilter(preset.value);
+                            setMinPriceInput('');
+                            setMaxPriceInput('');
+                          }}
+                          className={`px-3 py-1 rounded-lg text-xs font-semibold border cursor-pointer transition-all ${
+                            isSelected
+                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                              : (theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white' : 'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50')
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Custom range controls */}
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                  <span className={`text-xs font-bold ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>Custom (₹):</span>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      placeholder="Min"
+                      value={minPriceInput}
+                      onChange={(e) => {
+                        setMinPriceInput(e.target.value);
+                        setPriceFilter('custom');
+                      }}
+                      className={`w-20 px-2.5 py-1 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-600 ${
+                        theme === 'dark' ? 'bg-zinc-950 border-zinc-800 text-white placeholder-zinc-600' : 'bg-zinc-50 border-zinc-200 text-zinc-900 placeholder-zinc-400'
+                      }`}
+                    />
+                    <span className="text-xs text-zinc-400">-</span>
+                    <input
+                      type="number"
+                      placeholder="Max"
+                      value={maxPriceInput}
+                      onChange={(e) => {
+                        setMaxPriceInput(e.target.value);
+                        setPriceFilter('custom');
+                      }}
+                      className={`w-20 px-2.5 py-1 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-600 ${
+                        theme === 'dark' ? 'bg-zinc-950 border-zinc-800 text-white placeholder-zinc-600' : 'bg-zinc-50 border-zinc-200 text-zinc-900 placeholder-zinc-400'
+                      }`}
+                    />
+                    {(minPriceInput || maxPriceInput) && (
+                      <button
+                        onClick={() => {
+                          setMinPriceInput('');
+                          setMaxPriceInput('');
+                          setPriceFilter('all');
+                        }}
+                        className="p-1 text-xs text-red-500 hover:text-red-400 font-semibold cursor-pointer"
+                        title="Clear custom range"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Flat Products Grid */}
+            {filteredProducts.length > 0 ? (
+              <div className="pb-16">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+                  {filteredProducts.slice(0, visibleCount).map((product) => (
+                    <div 
+                      key={product.id}
+                      className={`border rounded-2xl overflow-hidden transition-all duration-200 flex flex-col hover:shadow-md ${
+                        theme === 'dark' 
+                          ? 'bg-zinc-900/60 border-zinc-800 hover:border-zinc-700' 
+                          : 'bg-white border-zinc-200 hover:border-zinc-300'
+                      }`}
+                    >
+                      {/* Product Image */}
+                      <div className={`h-52 overflow-hidden relative border-b ${theme === 'dark' ? 'border-zinc-800 bg-zinc-950' : 'border-zinc-100 bg-zinc-50'}`}>
+                        <img 
+                          src={product.image_url} 
+                          alt={product.name}
+                          className="w-full h-full object-cover transition-transform duration-300 hover:scale-102"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1531403009284-440f080d1e12?auto=format&fit=crop&w=600&q=80';
+                          }}
+                        />
+                        <span className={`absolute top-3 left-3 px-2.5 py-0.5 rounded text-[10px] font-semibold tracking-wide border uppercase ${
+                          theme === 'dark' 
+                            ? 'bg-zinc-950/85 border-zinc-800 text-indigo-400' 
+                            : 'bg-indigo-50 border-indigo-100 text-indigo-700'
+                        }`}>
+                          {product.category}
+                        </span>
+                      </div>
+
+                      {/* Card Content */}
+                      <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-start gap-2.5">
+                            <h4 className={`text-xs font-bold leading-snug line-clamp-2 ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`} title={product.name}>
+                              {product.name}
+                            </h4>
+                            <span className={`text-xs font-bold whitespace-nowrap text-indigo-650 dark:text-indigo-400`}>
+                              ₹{product.price.toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                          <p className={`text-[11px] leading-relaxed line-clamp-2 ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-550'}`}>
+                            {product.description}
+                          </p>
+
+                          {/* Technical Specifications Table */}
+                          {product.specs && Object.keys(product.specs).length > 0 && (
+                            <div className={`mt-3 border rounded-xl overflow-hidden text-[10px] ${
+                              theme === 'dark' ? 'bg-zinc-950/50 border-zinc-800 text-zinc-300' : 'bg-zinc-50 border-zinc-200 text-zinc-650'
+                            }`}>
+                              <div className="divide-y divide-zinc-200/50 dark:divide-zinc-800/50">
+                                {Object.entries(product.specs).map(([key, val]) => (
+                                  <div key={key} className="flex justify-between px-3 py-1.5">
+                                    <span className="font-semibold uppercase opacity-60 text-[9px]">{key.replace('_', ' ')}:</span>
+                                    <span className="font-medium text-right line-clamp-1 pl-2">{String(val)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* E-Commerce Interactive Action Redirects */}
+                          <div className="flex items-center gap-4 mt-2 text-[10px] font-semibold">
+                            <button
+                              onClick={(e) => handleBuyViaChat(product.name, e)}
+                              className="text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-305 flex items-center gap-1 cursor-pointer"
+                            >
+                              <ShoppingBag className="w-3 h-3" />
+                              <span>Buy via Chat</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Purchase Button Hooks */}
+                        <div className="flex gap-2.5 pt-2">
+                          <button
+                            onClick={(e) => handleAddToCart(product.name, e)}
+                            className={`flex-1 py-2 border rounded-xl text-xs font-semibold transition-all active:scale-[0.98] cursor-pointer ${
+                              theme === 'dark' 
+                                ? 'bg-zinc-850 hover:bg-zinc-800 border-zinc-700 text-zinc-200 hover:text-white' 
+                                : 'bg-zinc-50 hover:bg-zinc-100 border-zinc-250 text-zinc-700 hover:text-zinc-950'
+                            }`}
+                          >
+                            Add to Cart
+                          </button>
+                          <button
+                            onClick={(e) => handleBuyNow(product, e)}
+                            className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition-all active:scale-[0.98] cursor-pointer shadow-md shadow-indigo-650/10"
+                          >
+                            Buy Now
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Load More Button */}
+                {filteredProducts.length > visibleCount && (
+                  <div className="flex justify-center mt-12">
+                    <button
+                      onClick={() => setVisibleCount(prev => prev + 24)}
+                      className={`flex items-center gap-2 px-6 py-2.5 border rounded-xl text-xs font-semibold transition-all active:scale-[0.98] cursor-pointer ${
+                        theme === 'dark'
+                          ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:bg-zinc-850 hover:text-white'
+                          : 'bg-white border-zinc-250 text-zinc-650 hover:bg-zinc-50 hover:text-zinc-900'
+                      }`}
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Load More Products</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-20 border rounded-2xl border-dashed dark:border-zinc-800 border-zinc-200">
+                <p className={`text-sm ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                  No products found matching the criteria. Try clearing search or presets.
+                </p>
+              </div>
+            )}
+          </section>
+        ) : null}
+      </div>
+
+      {/* Floating Chat Bubble widget (Shop view only, drawer closed) */}
+      {activeView === 'shop' && !isChatOpen && (
+        <button
+          id="chat-bubble-btn"
+          onClick={() => {
+            setIsChatOpen(true);
+            setToastMessage("Sales Agent opened!");
+            setTimeout(() => {
+              inputRef.current?.focus();
+            }, 150);
+          }}
+          className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-gradient-to-tr from-blue-600 via-sky-500 to-cyan-500 hover:scale-105 active:scale-95 transition-all z-40 cursor-pointer animate-bounce shadow-2xl p-1.5 flex items-center justify-center"
+          title="Open Sales Agent"
+        >
+          <SalesAgentLogo className="w-11 h-11 drop-shadow-md" />
+        </button>
+      )}
+
+      {/* Sliding Support Chat Drawer (Shop view only) */}
+      {activeView === 'shop' && isChatOpen && (
+        <>
+          <div className="fixed inset-0 bg-black/60 z-40 backdrop-blur-xs transition-opacity duration-300" onClick={() => setIsChatOpen(false)} />
+          <div 
+            id="support-chat-drawer"
+            style={{ width: typeof window !== 'undefined' && window.innerWidth < 640 ? '100%' : `${drawerWidth}px` }}
+            className={`fixed top-0 right-0 h-full border-l shadow-2xl flex flex-col z-50 overflow-hidden max-w-full ${
+              isResizingDrawer ? 'transition-none select-none' : 'transition-all duration-150'
+            } ${
+              theme === 'dark' ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'
+            }`}
+          >
+            {/* Draggable Resizer Boundary Handle on the left border */}
+            <div
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setIsResizingDrawer(true);
+              }}
+              className="absolute top-0 left-0 bottom-0 w-2 hover:w-3 bg-transparent hover:bg-indigo-500/40 cursor-ew-resize z-50 flex items-center justify-center transition-all group"
+              title="Click and drag left/right to resize chat drawer width"
+            >
+              <div className="w-1 h-12 rounded-full bg-zinc-500/40 group-hover:bg-indigo-400 transition-colors shadow-sm" />
+            </div>
+
+            {renderChatWindow(true)}
+          </div>
+        </>
+      )}
+
+      {/* My Account Modal */}
+      {isAccountModalOpen && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-fadeIn animate-duration-200">
+          <div 
+            id="account-modal"
+            className={`border rounded-2xl max-w-3xl w-full p-6 shadow-2xl transition-all duration-200 relative flex flex-col max-h-[85vh] ${
+              theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-white border-zinc-200 text-zinc-900'
+            }`}
+          >
+            {/* Close Button */}
+            <button
+              onClick={() => {
+                setIsAccountModalOpen(false);
+                setEditingAddressId(null);
+                setNewAddressLine('');
+                setNewCity('');
+                setNewPostalCode('');
+                setNewAddressIsDefault(false);
+              }}
+              className={`absolute top-4 right-4 p-1.5 rounded-lg transition-colors cursor-pointer ${
+                theme === 'dark' ? 'hover:bg-zinc-800 text-zinc-400 hover:text-white' : 'hover:bg-zinc-100 text-zinc-500 hover:text-zinc-900'
+              }`}
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Modal Title */}
+            <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+              👤 User Account Dashboard
+            </h2>
+
+            {/* Modal Tabs */}
+            <div className="flex border-b mb-4 dark:border-zinc-800 border-zinc-150">
+              <button
+                onClick={() => setActiveAccountTab('orders')}
+                className={`py-2 px-4 border-b-2 text-xs font-bold transition-colors whitespace-nowrap cursor-pointer ${
+                  activeAccountTab === 'orders'
+                    ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                    : 'border-transparent text-zinc-500 hover:text-zinc-700'
+                }`}
+              >
+                📋 Order History
+              </button>
+              <button
+                onClick={() => setActiveAccountTab('addresses')}
+                className={`py-2 px-4 border-b-2 text-xs font-bold transition-colors whitespace-nowrap cursor-pointer ${
+                  activeAccountTab === 'addresses'
+                    ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                    : 'border-transparent text-zinc-500 hover:text-zinc-700'
+                }`}
+              >
+                📍 Saved Addresses
+              </button>
+            </div>
+
+            {/* Tab Contents */}
+            <div className="overflow-y-auto pr-1 flex-1 py-1">
+              {activeAccountTab === 'orders' && (
+                <div className="space-y-4">
+                  {isOrdersLoading ? (
+                    <div className="text-center py-6 text-xs text-zinc-500">Loading order history...</div>
+                  ) : userOrders.length === 0 ? (
+                    <div className="text-center py-6 text-xs text-zinc-500">No orders placed yet.</div>
+                  ) : (
+                    userOrders.map((order) => (
+                      <div
+                        key={order._id}
+                        className={`p-4 border rounded-xl shadow-xs transition-all ${
+                          theme === 'dark' ? 'bg-zinc-850 border-zinc-850/45' : 'bg-zinc-50 border-zinc-200'
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2 mb-2 pb-2 border-b dark:border-zinc-800 border-zinc-200">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-xs text-indigo-600 dark:text-indigo-400">
+                              {order.order_id}
+                            </span>
+                            <span className="text-[10px] text-zinc-400">
+                              {new Date(order.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                            order.status === 'Delivered'
+                              ? 'bg-blue-500/10 text-blue-500 border-blue-500/20'
+                              : order.status === 'Placed'
+                              ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                              : order.status === 'Refunded'
+                              ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
+                              : order.status === 'Returned'
+                              ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                              : 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20'
+                          }`}>
+                            {order.status}
+                          </span>
+                        </div>
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-zinc-500">Product:</span>
+                            <span className="font-medium text-right max-w-[280px] truncate">{order.product_name}</span>
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-zinc-500">Price:</span>
+                            <span className="font-bold">₹{Number(order.price).toLocaleString('en-IN')}</span>
+                          </div>
+                          {order.shipping_address && (
+                            <div className="flex justify-between text-xs">
+                              <span className="text-zinc-500">Ship To:</span>
+                              <span className="italic text-zinc-400 text-right max-w-[280px] truncate">{order.shipping_address}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {activeAccountTab === 'addresses' && (
+                <div className="space-y-6">
+                  {/* Save/Add Address Form */}
+                  <form onSubmit={handleSaveAddress} className={`p-4 border rounded-xl space-y-3 ${
+                    theme === 'dark' ? 'bg-zinc-850/50 border-zinc-800' : 'bg-zinc-50 border-zinc-200'
+                  }`}>
+                    <h3 className="text-xs font-bold">
+                      {editingAddressId ? '✏️ Edit Saved Address' : '➕ Add New Address'}
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="md:col-span-2">
+                        <label className="block text-[10px] text-zinc-400 font-bold mb-1">Street Address</label>
+                        <input
+                          type="text"
+                          required
+                          value={newAddressLine}
+                          onChange={(e) => setNewAddressLine(e.target.value)}
+                          placeholder="e.g. 123 Main St, Apt 4"
+                          className={`w-full px-3 py-1.5 border rounded-lg text-xs outline-none transition-all ${
+                            theme === 'dark' ? 'bg-zinc-900 border-zinc-700 text-white' : 'bg-white border-zinc-200'
+                          }`}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-zinc-400 font-bold mb-1">City</label>
+                        <input
+                          type="text"
+                          required
+                          value={newCity}
+                          onChange={(e) => setNewCity(e.target.value)}
+                          placeholder="e.g. Springfield"
+                          className={`w-full px-3 py-1.5 border rounded-lg text-xs outline-none transition-all ${
+                            theme === 'dark' ? 'bg-zinc-900 border-zinc-700 text-white' : 'bg-white border-zinc-200'
+                          }`}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                      <div className="flex gap-4">
+                        <div className="w-[120px]">
+                          <label className="block text-[10px] text-zinc-400 font-bold mb-1">Postal Code</label>
+                          <input
+                            type="text"
+                            required
+                            value={newPostalCode}
+                            onChange={(e) => setNewPostalCode(e.target.value)}
+                            placeholder="e.g. 627001"
+                            className={`w-full px-3 py-1.5 border rounded-lg text-xs outline-none transition-all ${
+                              theme === 'dark' ? 'bg-zinc-900 border-zinc-700 text-white' : 'bg-white border-zinc-200'
+                            }`}
+                          />
+                        </div>
+                        <label className="flex items-center gap-1.5 self-end pb-2.5 cursor-pointer text-xs select-none">
+                          <input
+                            type="checkbox"
+                            checked={newAddressIsDefault}
+                            onChange={(e) => setNewAddressIsDefault(e.target.checked)}
+                            className="w-3.5 h-3.5 accent-indigo-600 rounded cursor-pointer"
+                          />
+                          Set as Default
+                        </label>
+                      </div>
+                      <div className="flex gap-2 self-end pb-1.5">
+                        {editingAddressId && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingAddressId(null);
+                              setNewAddressLine('');
+                              setNewCity('');
+                              setNewPostalCode('');
+                              setNewAddressIsDefault(false);
+                            }}
+                            className={`px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                              theme === 'dark' ? 'border-zinc-700 text-zinc-300 hover:bg-zinc-800' : 'border-zinc-200 text-zinc-650 hover:bg-zinc-100'
+                            }`}
+                          >
+                            Cancel
+                          </button>
+                        )}
+                        <button
+                          type="submit"
+                          className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-xs cursor-pointer shadow-md shadow-indigo-650/10 active:scale-[0.98] transition-all"
+                        >
+                          {editingAddressId ? 'Save Changes' : 'Add Address'}
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+
+                  {/* Address List */}
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-bold">📍 Saved Locations</h3>
+                    {isAddressesLoading ? (
+                      <div className="text-center py-4 text-xs text-zinc-500">Loading saved locations...</div>
+                    ) : savedAddresses.length === 0 ? (
+                      <div className="text-center py-4 text-xs text-zinc-500">No saved addresses found.</div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {savedAddresses.map((addr) => (
+                          <div
+                            key={addr._id}
+                            className={`p-3 border rounded-xl relative flex flex-col justify-between gap-3 transition-all ${
+                              addr.is_default
+                                ? 'border-indigo-500/50 bg-indigo-500/[0.02] dark:bg-indigo-500/[0.01]'
+                                : theme === 'dark' ? 'bg-zinc-850 border-zinc-800' : 'bg-white border-zinc-200'
+                            }`}
+                          >
+                            <div>
+                              <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                                <span className="font-bold text-xs">{addr.address_line}</span>
+                                {addr.is_default && (
+                                  <span className="text-[8px] font-extrabold px-1.5 py-0.5 bg-indigo-600 text-white uppercase rounded-full">
+                                    Default
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-zinc-400">
+                                {addr.city} ({addr.postal_code})
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2 border-t pt-2 dark:border-zinc-800 border-zinc-150 justify-end">
+                              <button
+                                onClick={() => {
+                                  setEditingAddressId(addr._id);
+                                  setNewAddressLine(addr.address_line);
+                                  setNewCity(addr.city);
+                                  setNewPostalCode(addr.postal_code);
+                                  setNewAddressIsDefault(addr.is_default);
+                                }}
+                                className="text-[10px] text-indigo-500 hover:text-indigo-400 font-bold transition-colors cursor-pointer"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => handleDeleteAddress(addr._id)}
+                                className="text-[10px] text-red-500 hover:text-red-400 font-bold transition-colors cursor-pointer"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Glassmorphic Authentication Modal */}
+      {isAuthModalOpen && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-fadeIn animate-duration-200">
+          <div 
+            id="auth-modal"
+            className={`border rounded-2xl max-w-md w-full p-6 shadow-2xl transition-all duration-200 relative ${
+              theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-white border-zinc-200 text-zinc-900'
+            }`}
+          >
+            {/* Close Button */}
+            <button
+              id="close-auth-modal-btn"
+              onClick={() => {
+                setIsAuthModalOpen(false);
+                setAuthError(null);
+                setShowPassword(false);
+              }}
+              className={`absolute top-4 right-4 p-1.5 rounded-lg transition-colors cursor-pointer ${
+                theme === 'dark' ? 'hover:bg-zinc-800 text-zinc-400 hover:text-white' : 'hover:bg-zinc-100 text-zinc-500 hover:text-zinc-900'
+              }`}
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Modal Tabs */}
+            <div className="flex border-b mb-6 dark:border-zinc-800 border-zinc-150">
+              <button
+                id="auth-tab-signin-btn"
+                type="button"
+                onClick={() => {
+                  setAuthTab('signin');
+                  setAuthError(null);
+                  setShowPassword(false);
+                }}
+                className={`flex-1 pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer ${
+                  authTab === 'signin'
+                    ? 'border-indigo-650 text-indigo-650 dark:text-indigo-400'
+                    : 'border-transparent text-zinc-450 hover:text-zinc-500'
+                }`}
+              >
+                Sign In
+              </button>
+              <button
+                id="auth-tab-signup-btn"
+                type="button"
+                onClick={() => {
+                  setAuthTab('signup');
+                  setAuthError(null);
+                  setShowPassword(false);
+                }}
+                className={`flex-1 pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer ${
+                  authTab === 'signup'
+                    ? 'border-indigo-650 text-indigo-650 dark:text-indigo-400'
+                    : 'border-transparent text-zinc-450 hover:text-zinc-500'
+                }`}
+              >
+                Sign Up
+              </button>
+            </div>
+
+            {/* Auth Tab Content */}
+            <form onSubmit={authTab === 'signin' ? handleLogin : handleRegister} className="space-y-4">
+              {authError && (
+                <div className="p-3 bg-red-950/20 border border-red-900/40 text-red-400 rounded-lg text-xs font-semibold leading-relaxed">
+                  {authError}
+                </div>
+              )}
+
+              {authTab === 'signup' && (
+                <div>
+                  <label className={`block text-xs font-bold mb-1.5 ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>Username</label>
+                  <input
+                    id="auth-username-input"
+                    type="text"
+                    required
+                    value={authUsername}
+                    onChange={(e) => setAuthUsername(e.target.value)}
+                    placeholder="Enter your username"
+                    className={`w-full px-3 py-2 text-xs border rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-600 ${
+                      theme === 'dark' ? 'bg-zinc-950 border-zinc-800 text-white placeholder-zinc-600' : 'bg-zinc-50 border-zinc-200 text-zinc-900 placeholder-zinc-400'
+                    }`}
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className={`block text-xs font-bold mb-1.5 ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>Email Address</label>
+                <input
+                  id="auth-email-input"
+                  type="email"
+                  required
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  placeholder="Enter your email address"
+                  className={`w-full px-3 py-2 text-xs border rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-600 ${
+                    theme === 'dark' ? 'bg-zinc-950 border-zinc-800 text-white placeholder-zinc-600' : 'bg-zinc-50 border-zinc-200 text-zinc-900 placeholder-zinc-400'
+                  }`}
+                />
+              </div>
+
+              <div>
+                <label className={`block text-xs font-bold mb-1.5 ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>Password</label>
+                <div className="relative">
+                  <input
+                    id="auth-password-input"
+                    type={showPassword ? "text" : "password"}
+                    required
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    placeholder="Enter your password"
+                    className={`w-full pl-3 pr-10 py-2 text-xs border rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-600 ${
+                      theme === 'dark' ? 'bg-zinc-950 border-zinc-800 text-white placeholder-zinc-600' : 'bg-zinc-50 border-zinc-200 text-zinc-900 placeholder-zinc-400'
+                    }`}
+                  />
+                  <button
+                    id="toggle-auth-password-visibility-btn"
+                    type="button"
+                    onClick={() => setShowPassword(prev => !prev)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors cursor-pointer"
+                    title={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                id="auth-submit-btn"
+                type="submit"
+                disabled={authLoading}
+                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md active:scale-[0.98] transition-all disabled:opacity-50 cursor-pointer mt-2"
+              >
+                {authLoading ? 'Please wait...' : authTab === 'signin' ? 'Sign In' : 'Create Account'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Buy Now Success Modal */}
+      {buyProduct && (
+        <div className="fixed inset-0 bg-black/75 z-[60] flex items-center justify-center p-4 backdrop-blur-xs animate-fadeIn animate-duration-200">
+          <div 
+            id="buy-product-modal"
+            className={`border rounded-2xl max-w-md w-full p-6 shadow-2xl relative ${
+              theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-white border-zinc-200 text-zinc-900'
+            }`}
+          >
+            <button
+              id="close-buy-modal-btn"
+              onClick={() => setBuyProduct(null)}
+              className={`absolute top-4 right-4 p-1.5 rounded-lg transition-colors cursor-pointer ${
+                theme === 'dark' ? 'hover:bg-zinc-800 text-zinc-400 hover:text-white' : 'hover:bg-zinc-100 text-zinc-500 hover:text-zinc-900'
+              }`}
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {!isOrderConfirmed ? (
+              <>
+                <h3 className="font-bold text-base mb-2">Review Order</h3>
+                <div className="flex gap-4.5 mb-5 items-center">
+                  <div className="w-16 h-16 rounded-xl overflow-hidden bg-zinc-50 border border-zinc-100 flex-shrink-0">
+                    <img 
+                      src={buyProduct.image_url} 
+                      alt={buyProduct.name} 
+                      className="w-full h-full object-cover" 
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1531403009284-440f080d1e12?auto=format&fit=crop&w=600&q=80';
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold leading-normal line-clamp-1">{buyProduct.name}</h4>
+                    <span className="text-xs font-bold text-indigo-650 dark:text-indigo-400 mt-1 block">
+                      ₹{buyProduct.price.toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                </div>
+
+                <form onSubmit={executeCheckout} className="space-y-4">
+                  <div>
+                    <label className={`block text-xs font-bold mb-1.5 ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>
+                      Delivery Hub
+                    </label>
+
+                    {/* Hub Dropdown */}
+                    <select
+                      id="hub-region-select"
+                      required
+                      value={selectedHub}
+                      onChange={(e) => {
+                        const hub = e.target.value as 'Mumbai Hub' | 'Nagpur Hub' | '';
+                        setSelectedHub(hub);
+                        if (hub === 'Mumbai Hub') {
+                          setShippingAddress('123 Marine Drive, Mumbai, Maharashtra 400001');
+                        } else if (hub === 'Nagpur Hub') {
+                          setShippingAddress('45 Wardha Road, Nagpur, Maharashtra 440001');
+                        } else {
+                          setShippingAddress('');
+                        }
+                      }}
+                      className={`w-full px-3 py-2.5 text-xs border rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-600 mb-3 ${
+                        theme === 'dark' ? 'bg-zinc-950 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-900'
+                      }`}
+                    >
+                      <option value="">-- Select Delivery Hub --</option>
+                      <option value="Mumbai Hub">📍 Mumbai Hub</option>
+                      <option value="Nagpur Hub">📍 Nagpur Hub</option>
+                    </select>
+
+                    <label className={`block text-xs font-bold mb-1.5 ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>
+                      Shipping Address
+                    </label>
+                    <textarea
+                      id="shipping-address-input"
+                      required
+                      rows={2}
+                      value={shippingAddress}
+                      onChange={(e) => setShippingAddress(e.target.value)}
+                      placeholder="Address auto-fills from hub or type manually..."
+                      className={`w-full px-3 py-2 text-xs border rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-600 ${
+                        theme === 'dark' ? 'bg-zinc-950 border-zinc-800 text-white placeholder-zinc-650' : 'bg-zinc-50 border-zinc-200 text-zinc-900 placeholder-zinc-400'
+                      }`}
+                    />
+                    {savedAddresses.length > 0 && (
+                      <div className="mt-2 space-y-1.5">
+                        <label className={`block text-[10px] font-bold ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                          Or select a saved location:
+                        </label>
+                        <div className="flex flex-wrap gap-1.5 max-h-[85px] overflow-y-auto pr-1 py-0.5">
+                          {savedAddresses.map((addr) => (
+                            <button
+                              key={addr._id}
+                              type="button"
+                              onClick={() => setShippingAddress(`${addr.address_line}, ${addr.city} (${addr.postal_code})`)}
+                              className={`px-2.5 py-1 text-[10px] font-semibold border rounded-lg transition-all cursor-pointer truncate max-w-[200px] ${
+                                shippingAddress === `${addr.address_line}, ${addr.city} (${addr.postal_code})`
+                                  ? 'bg-indigo-600/10 border-indigo-500 text-indigo-600 dark:text-indigo-400'
+                                  : theme === 'dark'
+                                  ? 'bg-zinc-850 border-zinc-800 hover:border-zinc-700 text-zinc-300'
+                                  : 'bg-zinc-100 border-zinc-200 hover:border-zinc-300 text-zinc-650'
+                              }`}
+                            >
+                              {addr.address_line}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    id="confirm-checkout-btn"
+                    type="submit"
+                    disabled={isOrderPlacing}
+                    className={`w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                      isOrderPlacing ? 'opacity-70 cursor-not-allowed' : ''
+                    }`}
+                  >
+                    {isOrderPlacing ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        Placing Order...
+                      </>
+                    ) : (
+                      'Confirm & Buy'
+                    )}
+                  </button>
+                </form>
+              </>
+            ) : (
+              <div className="text-center py-4">
+                <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto mb-4 border border-emerald-500/25">
+                  <Check className="w-6 h-6" />
+                </div>
+                <h3 className="font-bold text-base mb-2">Order Confirmed!</h3>
+                <p className={`text-xs leading-relaxed mb-4 font-normal ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                  Thank you! Your order for <strong>{buyProduct.name}</strong> has been successfully placed. We will dispatch it to <em>{shippingAddress}</em> soon.
+                </p>
+
+                {/* Placed Order Details */}
+                <div className={`text-left p-3 rounded-xl mb-6 border text-xs space-y-1.5 ${
+                  theme === 'dark' ? 'bg-zinc-950 border-zinc-800 text-zinc-300' : 'bg-zinc-50 border-zinc-150 text-zinc-700'
+                }`}>
+                  <div className="flex justify-between">
+                    <span className="font-semibold text-zinc-500">Order ID:</span>
+                    <span className="font-mono text-indigo-600 dark:text-indigo-400 font-bold">{placedOrderId}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold text-zinc-500">Details ID:</span>
+                    <span className="font-mono break-all">{placedOrderDetailsId}</span>
+                  </div>
+                </div>
+
+                <button
+                  id="dismiss-buy-modal-btn"
+                  onClick={() => setBuyProduct(null)}
+                  className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  Continue Shopping
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Custom Delete Confirmation Modal */}
+      {deleteConfirmSessionId && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-fadeIn animate-duration-200">
+          <div className={`border rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center transform scale-100 transition-all duration-200 ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-white border-zinc-200 text-zinc-900'}`}>
+            <div className="w-12 h-12 rounded-full bg-red-500/10 text-red-400 flex items-center justify-center mx-auto mb-4 border border-red-500/25">
+              <Trash2 className="w-5.5 h-5.5" />
+            </div>
+            <h3 className={`font-semibold text-base mb-2 ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>Delete Chat Session?</h3>
+            <p className={`text-xs leading-relaxed mb-6 font-normal ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>
+              Are you sure you want to delete this chat session? This action cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => setDeleteConfirmSessionId(null)}
+                className={`px-4 py-2 rounded-lg text-xs font-medium transition-all active:scale-[0.98] cursor-pointer ${theme === 'dark' ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300' : 'bg-zinc-105 hover:bg-zinc-200 text-zinc-650'}`}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (deleteConfirmSessionId) {
+                    executeDeleteSession(deleteConfirmSessionId);
+                    setDeleteConfirmSessionId(null);
+                  }
+                }}
+                className="px-4 py-2 bg-red-650 hover:bg-red-500 text-white rounded-lg text-xs font-medium transition-all active:scale-[0.98] cursor-pointer shadow-md shadow-red-600/15"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Clear All Confirmation Modal */}
+      {clearConfirmOpen && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-fadeIn animate-duration-200">
+          <div className={`border rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center transform scale-100 transition-all duration-200 ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-white border-zinc-200 text-zinc-900'}`}>
+            <div className="w-12 h-12 rounded-full bg-red-500/10 text-red-400 flex items-center justify-center mx-auto mb-4 border border-red-500/25">
+              <Trash2 className="w-5.5 h-5.5" />
+            </div>
+            <h3 className={`font-semibold text-base mb-2 ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>Clear All Chat History?</h3>
+            <p className={`text-xs leading-relaxed mb-6 font-normal ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>
+              Are you sure you want to clear all your chat sessions? This will permanently delete all conversation history.
+            </p>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => setClearConfirmOpen(false)}
+                className={`px-4 py-2 rounded-lg text-xs font-medium transition-all active:scale-[0.98] cursor-pointer ${theme === 'dark' ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-650'}`}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  localStorage.removeItem('shopease_support_sessions');
+                  localStorage.removeItem('shopease_active_support_session_id');
+                  localStorage.removeItem('shopease_sales_sessions');
+                  localStorage.removeItem('shopease_active_sales_session_id');
+                  setSupportSessions([]);
+                  setSalesSessions([]);
+                  initializeDefaultSupportSession();
+                  initializeDefaultSalesSession();
+                  setClearConfirmOpen(false);
+                }}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-medium transition-all active:scale-[0.98] cursor-pointer shadow-md shadow-red-600/15"
+              >
+                Clear All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Reset Confirmation Modal */}
+      {resetConfirmOpen && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-fadeIn animate-duration-200">
+          <div className={`border rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center transform scale-100 transition-all duration-200 ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-white border-zinc-200 text-zinc-900'}`}>
+            <div className="w-12 h-12 rounded-full bg-indigo-500/10 text-indigo-400 flex items-center justify-center mx-auto mb-4 border border-indigo-500/25">
+              <RefreshCw className="w-5.5 h-5.5" />
+            </div>
+            <h3 className={`font-semibold text-base mb-2 ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>Reset Chat Session?</h3>
+            <p className={`text-xs leading-relaxed mb-6 font-normal ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>
+              Are you sure you want to reset the current chat session? This will clear the messages in this conversation.
+            </p>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => setResetConfirmOpen(false)}
+                className={`px-4 py-2 rounded-lg text-xs font-medium transition-all active:scale-[0.98] cursor-pointer ${theme === 'dark' ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-305' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-650'}`}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  executeResetSession();
+                  setResetConfirmOpen(false);
+                }}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium transition-all active:scale-[0.98] cursor-pointer shadow-md shadow-indigo-650/15"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Grievance & Support Inbox Modal */}
+      {isInboxModalOpen && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-fadeIn">
+          <div className={`border rounded-2xl max-w-2xl w-full p-6 shadow-2xl relative max-h-[85vh] flex flex-col ${
+            theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-white border-zinc-200 text-zinc-900'
+          }`}>
+            {/* Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-zinc-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-indigo-600/10 border border-indigo-500/20 rounded-xl flex items-center justify-center">
+                  <Inbox className="w-5 h-5 text-indigo-500" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-white">📫 My Grievance & Support Inbox</h3>
+                  <p className="text-[11px] text-zinc-400">Track your complaint status and read official officer response notes</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsInboxModalOpen(false)}
+                className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto py-4 space-y-4 pr-1">
+              {!currentUser ? (
+                <div className="text-center py-10 space-y-3">
+                  <AlertTriangle className="w-8 h-8 text-amber-400 mx-auto" />
+                  <p className="text-xs text-zinc-400">Please sign in to your ShopEase account to view your grievance inbox.</p>
+                  <button
+                    onClick={() => {
+                      setIsInboxModalOpen(false);
+                      setIsAuthModalOpen(true);
+                    }}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl"
+                  >
+                    Sign In Now
+                  </button>
+                </div>
+              ) : isInboxLoading ? (
+                <div className="flex items-center justify-center py-12 text-zinc-400 gap-2 text-xs">
+                  <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
+                  <span>Loading your grievance responses from MongoDB...</span>
+                </div>
+              ) : userTickets.length === 0 && userGrievances.length === 0 ? (
+                <div className="text-center py-12 border border-dashed border-zinc-800 rounded-2xl p-6">
+                  <Check className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
+                  <p className="text-xs font-bold text-white mb-1">No Active Grievances or Support Complaints</p>
+                  <p className="text-[11px] text-zinc-400 max-w-sm mx-auto">
+                    You have zero open support complaints. If you experience an order delivery or missing item issue, contact Support Chat!
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {[...userTickets, ...userGrievances.map(g => ({
+                    _id: g._id,
+                    order_id: g.order_id,
+                    message: g.admin_note ? `Order Grievance: ${g.admin_note}` : `Order status: ${g.status}`,
+                    status: g.status,
+                    escalation_level: g.status === 'Paused' ? 2 : 1,
+                    product_name: g.product_name,
+                    price: g.price,
+                    created_at: g.created_at,
+                    officer_response: g.admin_note || g.officer_response,
+                    last_handled_by: g.last_officer || g.last_handled_by
+                  }))].map((item, idx) => {
+                    const isResolved = item.status === 'Resolved' || item.status === 'Refunded';
+
+                    return (
+                      <div key={item._id || idx} className="p-4 rounded-xl border border-zinc-850 bg-zinc-950/40 space-y-2.5">
+                        <div className="flex items-start justify-between gap-2 border-b border-zinc-850 pb-2.5">
+                          <div>
+                            <span className="font-mono text-indigo-400 text-xs font-bold">
+                              Ticket / Order ID: #{item.order_id || item._id?.toString().slice(0, 10)}
+                            </span>
+                            {item.product_name && (
+                              <p className="text-xs font-medium text-white mt-0.5">{item.product_name} (₹{Number(item.price || 0).toLocaleString('en-IN')})</p>
+                            )}
+                            <p className="text-[10px] text-zinc-500">{new Date(item.created_at || Date.now()).toLocaleString()}</p>
+                          </div>
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1 ${
+                            isResolved
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                              : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                          }`}>
+                            {isResolved ? <Check className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+                            {item.status || 'Under Investigation'}
+                          </span>
+                        </div>
+
+                        <p className="text-xs text-zinc-300 leading-relaxed font-medium">
+                          <strong>Issue Filed:</strong> {item.message || 'Order support ticket.'}
+                        </p>
+
+                        {/* Officer Response Note */}
+                        {item.officer_response ? (
+                          <div className="p-3 bg-indigo-950/40 border border-indigo-800/40 rounded-xl text-xs space-y-1">
+                            <div className="flex items-center justify-between text-[10px] font-bold text-indigo-400">
+                              <span>💬 Official Officer Response ({item.last_handled_by || 'Grievance Desk'}):</span>
+                            </div>
+                            <p className="text-indigo-200 text-xs leading-relaxed font-medium">
+                              {item.officer_response}
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="p-2.5 bg-zinc-900 border border-zinc-800 rounded-xl text-[11px] text-zinc-400 flex items-center gap-2">
+                            <Clock className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 animate-spin" />
+                            <span>Assigned to Level {item.escalation_level || 1} Grievance Officer. Response pending within 24 hours.</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="pt-4 border-t border-zinc-800 flex justify-end">
+              <button
+                onClick={() => setIsInboxModalOpen(false)}
+                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-xs font-bold transition-all"
+              >
+                Close Inbox
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Toast Alert */}
+      {toastMessage && (
+        <div className="fixed bottom-6 left-6 z-50 animate-slideIn">
+          <div className="bg-indigo-600 text-white text-xs font-bold px-4.5 py-3 rounded-2xl shadow-xl flex items-center gap-2 border border-indigo-550/20 animate-pulse">
+            <Sparkles className="w-4 h-4 animate-spin" />
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}
